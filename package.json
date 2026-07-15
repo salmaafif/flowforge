@@ -1,0 +1,20 @@
+{
+  "name": "flowforge",
+  "version": "0.0.0",
+  "private": true,
+  "description": "FlowForge — real-time multi-tenant workflow orchestration engine",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "prettier": "^3.3.3"
+  }
+}
