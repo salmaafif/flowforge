@@ -28,3 +28,14 @@ export class InvalidWorkflowDefinitionError extends Error {
     );
   }
 }
+
+/**
+ * Thrown when a definition is structurally valid but its dependency graph contains
+ * a cycle, so no topological execution order exists.
+ */
+export class CyclicWorkflowError extends Error {
+  constructor(readonly cycle: string[]) {
+    super(`Workflow graph contains a cycle: ${cycle.join(' -> ')}`);
+    this.name = 'CyclicWorkflowError';
+  }
+}
