@@ -1,5 +1,6 @@
 export * from './step-executor';
 export * from './step-executor.registry';
+export * from './default-registry';
 export * from './sleep';
 export * from './backoff';
 export * from './retry-executor';
