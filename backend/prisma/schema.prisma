@@ -1,5 +1,15 @@
 // FlowForge Prisma schema.
-// Data models (tenants, users, workflows, versions, runs) are added in step 3b.
+//
+// Design notes:
+// - Multi-tenant isolation: every top-level entity carries `tenantId`, is indexed
+//   on it, and unique constraints are scoped per tenant. All queries filter by tenant.
+// - Versioning is append-only (git-like): a workflow's definition lives in
+//   WorkflowVersion rows. "Current" = highest `version`. Rolling back creates a NEW
+//   version whose definition copies an older one, so history is never lost.
+// - The DAG definition (nodes, edges, per-step retry/backoff, workflow timeout) is
+//   stored as JSONB (`definition`) and validated at the application layer (Zod).
+// - High-volume execution logs go to the append-only ExecutionLog table, kept
+//   separate from run/step records (partitioning is added via a raw SQL migration).
 
 generator client {
   provider = "prisma-client-js"
@@ -8,4 +18,208 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum StepType {
+  HTTP
+  SCRIPT
+  DELAY
+  CONDITION
+}
+
+enum TriggerType {
+  MANUAL
+  SCHEDULED
+  WEBHOOK
+}
+
+enum RunStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  TIMED_OUT
+}
+
+enum StepStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  SKIPPED
+  RETRYING
+}
+
+enum LogLevel {
+  DEBUG
+  INFO
+  WARN
+  ERROR
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy & identity
+// ---------------------------------------------------------------------------
+
+model Tenant {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users     User[]
+  workflows Workflow[]
+  runs      Run[]
+  logs      ExecutionLog[]
+
+  @@map("tenants")
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @db.Uuid
+  email        String
+  passwordHash String
+  role         Role     @default(VIEWER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdVersions WorkflowVersion[] @relation("VersionAuthor")
+  triggeredRuns   Run[]             @relation("RunTriggeredBy")
+
+  // Email is unique per tenant, not globally.
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// Workflows & version history
+// ---------------------------------------------------------------------------
+
+model Workflow {
+  id          String  @id @default(uuid()) @db.Uuid
+  tenantId    String  @db.Uuid
+  name        String
+  description String?
+  enabled     Boolean @default(true)
+
+  // Trigger configuration (the workflow definition itself lives in versions).
+  cronExpression String?
+  webhookToken   String?  @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  versions WorkflowVersion[]
+  runs     Run[]
+
+  // Workflow name is unique per tenant.
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("workflows")
+}
+
+model WorkflowVersion {
+  id          String   @id @default(uuid()) @db.Uuid
+  workflowId  String   @db.Uuid
+  version     Int
+  // The DAG definition: steps, edges, retry/backoff config, workflow timeout.
+  definition  Json
+  createdById String?  @db.Uuid
+  createdAt   DateTime @default(now())
+
+  workflow  Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  createdBy User?    @relation("VersionAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  runs      Run[]
+
+  // Monotonic version number per workflow; also the lookup for rollback.
+  @@unique([workflowId, version])
+  @@index([workflowId])
+  @@map("workflow_versions")
+}
+
+// ---------------------------------------------------------------------------
+// Run records
+// ---------------------------------------------------------------------------
+
+model Run {
+  id                String      @id @default(uuid()) @db.Uuid
+  tenantId          String      @db.Uuid
+  workflowId        String      @db.Uuid
+  workflowVersionId String      @db.Uuid
+  status            RunStatus   @default(PENDING)
+  trigger           TriggerType
+  triggeredById     String?     @db.Uuid
+  startedAt         DateTime?
+  finishedAt        DateTime?
+  createdAt         DateTime    @default(now())
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workflow        Workflow        @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  workflowVersion WorkflowVersion @relation(fields: [workflowVersionId], references: [id])
+  triggeredBy     User?           @relation("RunTriggeredBy", fields: [triggeredById], references: [id], onDelete: SetNull)
+  steps           RunStep[]
+
+  @@index([tenantId, workflowId])
+  @@index([tenantId, status])
+  // Supports the run-history view (most recent first) per workflow.
+  @@index([workflowId, createdAt])
+  @@map("runs")
+}
+
+model RunStep {
+  id         String     @id @default(uuid()) @db.Uuid
+  runId      String     @db.Uuid
+  // The node id / key from the DAG definition this step corresponds to.
+  stepKey    String
+  name       String
+  type       StepType
+  status     StepStatus @default(PENDING)
+  attempts   Int        @default(0)
+  startedAt  DateTime?
+  finishedAt DateTime?
+  durationMs Int?
+  output     Json?
+  error      String?
+
+  run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, stepKey])
+  @@index([runId])
+  @@map("run_steps")
+}
+
+// ---------------------------------------------------------------------------
+// High-volume execution logs (append-only, kept separate from run records)
+// ---------------------------------------------------------------------------
+
+model ExecutionLog {
+  id        BigInt   @id @default(autoincrement())
+  tenantId  String   @db.Uuid
+  runId     String   @db.Uuid
+  runStepId String?  @db.Uuid
+  level     LogLevel @default(INFO)
+  message   String
+  context   Json?
+  timestamp DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([runId, timestamp])
+  @@index([tenantId, timestamp])
+  @@map("execution_logs")
 }
