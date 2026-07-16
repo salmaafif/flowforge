@@ -31,6 +31,7 @@ describe('WorkflowsService', () => {
   const prismaMock = {
     workflow: {
       create: jest.fn(),
+      count: jest.fn(),
       findMany: jest.fn(),
       findFirst: jest.fn(),
       update: jest.fn(),
@@ -51,9 +52,9 @@ describe('WorkflowsService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    // Interactive transaction: hand the same mock back as the tx client.
-    prismaMock.$transaction.mockImplementation(async (callback: (tx: unknown) => unknown) =>
-      callback(prismaMock),
+    // Supports both interactive ($transaction(cb)) and batch ($transaction([...])) forms.
+    prismaMock.$transaction.mockImplementation(async (arg: unknown) =>
+      Array.isArray(arg) ? Promise.all(arg) : (arg as (tx: unknown) => unknown)(prismaMock),
     );
     prismaMock.workflow.findFirst.mockResolvedValue(storedWorkflow);
   });
@@ -92,6 +93,37 @@ describe('WorkflowsService', () => {
       await expect(
         service.create(user, { name: 'ETL', definition: validDefinition }),
       ).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe('findAll', () => {
+    it('returns paginated data with meta', async () => {
+      prismaMock.workflow.count.mockResolvedValue(45);
+      prismaMock.workflow.findMany.mockResolvedValue([storedWorkflow]);
+
+      const result = await service.findAll(user, { page: 2, pageSize: 20 });
+
+      expect(result.meta).toEqual({ total: 45, page: 2, pageSize: 20, totalPages: 3 });
+      expect(prismaMock.workflow.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 20, take: 20 }),
+      );
+    });
+
+    it('scopes to the tenant and applies search + enabled filters', async () => {
+      prismaMock.workflow.count.mockResolvedValue(0);
+      prismaMock.workflow.findMany.mockResolvedValue([]);
+
+      await service.findAll(user, { page: 1, pageSize: 10, search: 'etl', enabled: true });
+
+      const expectedWhere = {
+        tenantId: 'tenant-1',
+        name: { contains: 'etl', mode: 'insensitive' },
+        enabled: true,
+      };
+      expect(prismaMock.workflow.count).toHaveBeenCalledWith({ where: expectedWhere });
+      expect(prismaMock.workflow.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expectedWhere }),
+      );
     });
   });
 

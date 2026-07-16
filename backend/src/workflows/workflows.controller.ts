@@ -10,15 +10,18 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import { Role, Workflow, WorkflowVersion } from '@prisma/client';
 
 import { AuthenticatedUser } from '../auth/auth.types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { Paginated } from '../common/pagination';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { CreateVersionDto, createVersionSchema } from './dto/create-version.dto';
 import { CreateWorkflowDto, createWorkflowSchema } from './dto/create-workflow.dto';
+import { ListWorkflowsQueryDto, listWorkflowsQuerySchema } from './dto/list-workflows-query.dto';
 import { UpdateWorkflowDto, updateWorkflowSchema } from './dto/update-workflow.dto';
 import { WorkflowsService } from './workflows.service';
 
@@ -41,8 +44,11 @@ export class WorkflowsController {
   }
 
   @Get()
-  findAll(@CurrentUser() user: AuthenticatedUser): Promise<Workflow[]> {
-    return this.workflowsService.findAll(user);
+  findAll(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query(new ZodValidationPipe(listWorkflowsQuerySchema)) query: ListWorkflowsQueryDto,
+  ): Promise<Paginated<Workflow>> {
+    return this.workflowsService.findAll(user, query);
   }
 
   @Get(':id')

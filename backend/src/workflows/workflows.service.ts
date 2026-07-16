@@ -8,6 +8,7 @@ import {
 import { Prisma, Workflow, WorkflowVersion } from '@prisma/client';
 
 import { AuthenticatedUser } from '../auth/auth.types';
+import { Paginated, paginate, toSkipTake } from '../common/pagination';
 import { CyclicWorkflowError } from '../engine/dag/errors';
 import { InvalidWorkflowDefinitionError } from '../engine/dag/errors';
 import { WorkflowDag } from '../engine/dag/workflow-dag';
@@ -16,6 +17,7 @@ import { WorkflowDefinitionValidator } from '../engine/dag/workflow-definition.v
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateVersionDto } from './dto/create-version.dto';
 import { CreateWorkflowDto } from './dto/create-workflow.dto';
+import { ListWorkflowsQueryDto } from './dto/list-workflows-query.dto';
 import { UpdateWorkflowDto } from './dto/update-workflow.dto';
 
 /**
@@ -64,18 +66,33 @@ export class WorkflowsService {
     }
   }
 
-  findAll(user: AuthenticatedUser): Promise<Workflow[]> {
-    return this.prisma.workflow.findMany({
-      where: { tenantId: user.tenantId },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        versions: {
-          orderBy: { version: 'desc' },
-          take: 1,
-          select: { id: true, version: true, createdAt: true },
+  async findAll(
+    user: AuthenticatedUser,
+    query: ListWorkflowsQueryDto,
+  ): Promise<Paginated<Workflow>> {
+    const where: Prisma.WorkflowWhereInput = {
+      tenantId: user.tenantId,
+      ...(query.search ? { name: { contains: query.search, mode: 'insensitive' } } : {}),
+      ...(query.enabled !== undefined ? { enabled: query.enabled } : {}),
+    };
+
+    const [total, data] = await this.prisma.$transaction([
+      this.prisma.workflow.count({ where }),
+      this.prisma.workflow.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        ...toSkipTake(query),
+        include: {
+          versions: {
+            orderBy: { version: 'desc' },
+            take: 1,
+            select: { id: true, version: true, createdAt: true },
+          },
         },
-      },
-    });
+      }),
+    ]);
+
+    return paginate(data, total, query.page, query.pageSize);
   }
 
   async findOne(user: AuthenticatedUser, workflowId: string): Promise<Workflow> {
