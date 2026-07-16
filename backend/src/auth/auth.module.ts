@@ -6,10 +6,12 @@ import { JwtModule } from '@nestjs/jwt';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { RolesGuard } from './roles.guard';
 
 /**
  * Authentication module. Registers the JWT signer (secret from env) and installs
- * JwtAuthGuard globally, so every route is protected unless marked @Public().
+ * the global guards: JwtAuthGuard first (authentication), then RolesGuard (RBAC).
+ * Every route is protected unless marked @Public().
  */
 @Module({
   imports: [
@@ -23,7 +25,11 @@ import { JwtAuthGuard } from './jwt-auth.guard';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, { provide: APP_GUARD, useClass: JwtAuthGuard }],
+  providers: [
+    AuthService,
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
+  ],
   exports: [AuthService],
 })
 export class AuthModule {}
