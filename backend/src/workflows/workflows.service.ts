@@ -1,0 +1,284 @@
+import { randomBytes } from 'node:crypto';
+
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
+import { Prisma, Workflow, WorkflowVersion } from '@prisma/client';
+
+import { AuthenticatedUser } from '../auth/auth.types';
+import { Paginated, paginate, toSkipTake } from '../common/pagination';
+import { CyclicWorkflowError } from '../engine/dag/errors';
+import { InvalidWorkflowDefinitionError } from '../engine/dag/errors';
+import { WorkflowDag } from '../engine/dag/workflow-dag';
+import { WorkflowDefinition } from '../engine/dag/workflow-definition.schema';
+import { WorkflowDefinitionValidator } from '../engine/dag/workflow-definition.validator';
+import { PrismaService } from '../prisma/prisma.service';
+import { WorkflowSchedulerService } from '../scheduling/workflow-scheduler.service';
+import { CreateVersionDto } from './dto/create-version.dto';
+import { CreateWorkflowDto } from './dto/create-workflow.dto';
+import { ListWorkflowsQueryDto } from './dto/list-workflows-query.dto';
+import { UpdateWorkflowDto } from './dto/update-workflow.dto';
+
+/** Workflow with the write-only webhook secret removed — the shape every read returns. */
+export type SafeWorkflow<T extends Workflow = Workflow> = Omit<T, 'webhookToken'>;
+
+/**
+ * Tenant-scoped workflow CRUD with append-only versioning.
+ *
+ * Isolation: every query is filtered by the caller's tenantId; a workflow that
+ * exists in another tenant is indistinguishable from one that does not exist (404),
+ * so tenants cannot probe each other's data.
+ *
+ * Versioning: definitions are immutable. Editing publishes version N+1; rolling
+ * back to version K publishes a new version whose definition copies K. History is
+ * never rewritten, and runs keep pointing at the exact version they executed.
+ *
+ * Webhook tokens are write-only: they are returned once when (re)generated and
+ * stripped from every read, so a Viewer can never lift the token and use it to
+ * trigger runs around RBAC.
+ */
+@Injectable()
+export class WorkflowsService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly definitionValidator: WorkflowDefinitionValidator,
+    private readonly scheduler: WorkflowSchedulerService,
+  ) {}
+
+  async create(user: AuthenticatedUser, dto: CreateWorkflowDto): Promise<SafeWorkflow> {
+    this.assertExecutable(dto.definition);
+
+    try {
+      const created = await this.prisma.$transaction(async (tx) => {
+        const workflow = await tx.workflow.create({
+          data: {
+            tenantId: user.tenantId,
+            name: dto.name,
+            description: dto.description,
+            cronExpression: dto.cronExpression,
+          },
+        });
+        const version = await tx.workflowVersion.create({
+          data: {
+            workflowId: workflow.id,
+            version: 1,
+            definition: dto.definition as Prisma.InputJsonValue,
+            createdById: user.userId,
+          },
+        });
+        return { ...workflow, versions: [version] };
+      });
+      this.scheduler.sync(created);
+      return this.toSafe(created);
+    } catch (error) {
+      this.rethrow(error, dto.name);
+    }
+  }
+
+  async findAll(
+    user: AuthenticatedUser,
+    query: ListWorkflowsQueryDto,
+  ): Promise<Paginated<SafeWorkflow>> {
+    const where: Prisma.WorkflowWhereInput = {
+      tenantId: user.tenantId,
+      ...(query.search ? { name: { contains: query.search, mode: 'insensitive' } } : {}),
+      ...(query.enabled !== undefined ? { enabled: query.enabled } : {}),
+    };
+
+    const [total, data] = await this.prisma.$transaction([
+      this.prisma.workflow.count({ where }),
+      this.prisma.workflow.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        ...toSkipTake(query),
+        include: {
+          versions: {
+            orderBy: { version: 'desc' },
+            take: 1,
+            select: { id: true, version: true, createdAt: true },
+          },
+        },
+      }),
+    ]);
+
+    return paginate(
+      data.map((workflow) => this.toSafe(workflow)),
+      total,
+      query.page,
+      query.pageSize,
+    );
+  }
+
+  async findOne(user: AuthenticatedUser, workflowId: string): Promise<SafeWorkflow> {
+    const workflow = await this.prisma.workflow.findFirst({
+      where: { id: workflowId, tenantId: user.tenantId },
+      include: { versions: { orderBy: { version: 'desc' }, take: 1 } },
+    });
+    if (!workflow) {
+      throw new NotFoundException('Workflow not found');
+    }
+    return this.toSafe(workflow);
+  }
+
+  async update(
+    user: AuthenticatedUser,
+    workflowId: string,
+    dto: UpdateWorkflowDto,
+  ): Promise<SafeWorkflow> {
+    await this.getOwnedWorkflow(user, workflowId);
+    try {
+      const updated = await this.prisma.workflow.update({ where: { id: workflowId }, data: dto });
+      this.scheduler.sync(updated);
+      return this.toSafe(updated);
+    } catch (error) {
+      this.rethrow(error, dto.name ?? '');
+    }
+  }
+
+  /**
+   * Generates (or rotates) the webhook token. The token is only ever returned
+   * here — reads never include it.
+   */
+  async enableWebhook(
+    user: AuthenticatedUser,
+    workflowId: string,
+  ): Promise<{ webhookToken: string; url: string }> {
+    await this.getOwnedWorkflow(user, workflowId);
+    const webhookToken = randomBytes(24).toString('base64url');
+    await this.prisma.workflow.update({ where: { id: workflowId }, data: { webhookToken } });
+    return { webhookToken, url: `/hooks/${webhookToken}` };
+  }
+
+  async disableWebhook(user: AuthenticatedUser, workflowId: string): Promise<void> {
+    await this.getOwnedWorkflow(user, workflowId);
+    await this.prisma.workflow.update({
+      where: { id: workflowId },
+      data: { webhookToken: null },
+    });
+  }
+
+  async remove(user: AuthenticatedUser, workflowId: string): Promise<void> {
+    await this.getOwnedWorkflow(user, workflowId);
+    // Cascades to versions, runs, and steps via the schema's referential actions.
+    await this.prisma.workflow.delete({ where: { id: workflowId } });
+    this.scheduler.unregister(workflowId);
+  }
+
+  async listVersions(
+    user: AuthenticatedUser,
+    workflowId: string,
+  ): Promise<Array<Omit<WorkflowVersion, 'definition'>>> {
+    await this.getOwnedWorkflow(user, workflowId);
+    return this.prisma.workflowVersion.findMany({
+      where: { workflowId },
+      orderBy: { version: 'desc' },
+      select: { id: true, workflowId: true, version: true, createdById: true, createdAt: true },
+    });
+  }
+
+  async createVersion(
+    user: AuthenticatedUser,
+    workflowId: string,
+    dto: CreateVersionDto,
+  ): Promise<WorkflowVersion> {
+    await this.getOwnedWorkflow(user, workflowId);
+    this.assertExecutable(dto.definition);
+    return this.appendVersion(workflowId, dto.definition as Prisma.InputJsonValue, user.userId);
+  }
+
+  /** Rollback = publish a new version whose definition copies the target version. */
+  async rollback(
+    user: AuthenticatedUser,
+    workflowId: string,
+    targetVersion: number,
+  ): Promise<WorkflowVersion> {
+    await this.getOwnedWorkflow(user, workflowId);
+
+    const target = await this.prisma.workflowVersion.findUnique({
+      where: { workflowId_version: { workflowId, version: targetVersion } },
+    });
+    if (!target) {
+      throw new NotFoundException(`Version ${targetVersion} not found`);
+    }
+
+    this.assertExecutable(this.parseStoredDefinition(target.definition));
+    return this.appendVersion(workflowId, target.definition as Prisma.InputJsonValue, user.userId);
+  }
+
+  private async appendVersion(
+    workflowId: string,
+    definition: Prisma.InputJsonValue,
+    createdById: string,
+  ): Promise<WorkflowVersion> {
+    // The unique constraint on [workflowId, version] makes concurrent appends safe:
+    // the losing writer gets a P2002 instead of silently reusing a number.
+    return this.prisma.$transaction(async (tx) => {
+      const latest = await tx.workflowVersion.findFirst({
+        where: { workflowId },
+        orderBy: { version: 'desc' },
+        select: { version: true },
+      });
+      return tx.workflowVersion.create({
+        data: {
+          workflowId,
+          version: (latest?.version ?? 0) + 1,
+          definition,
+          createdById,
+        },
+      });
+    });
+  }
+
+  private async getOwnedWorkflow(user: AuthenticatedUser, workflowId: string): Promise<Workflow> {
+    const workflow = await this.prisma.workflow.findFirst({
+      where: { id: workflowId, tenantId: user.tenantId },
+    });
+    if (!workflow) {
+      throw new NotFoundException('Workflow not found');
+    }
+    return workflow;
+  }
+
+  /** Rejects definitions whose dependency graph contains a cycle. */
+  private assertExecutable(definition: WorkflowDefinition): void {
+    try {
+      new WorkflowDag(definition).executionLevels();
+    } catch (error) {
+      if (error instanceof CyclicWorkflowError) {
+        throw new BadRequestException(error.message);
+      }
+      throw error;
+    }
+  }
+
+  private parseStoredDefinition(stored: Prisma.JsonValue): WorkflowDefinition {
+    try {
+      return this.definitionValidator.validate(stored);
+    } catch (error) {
+      if (error instanceof InvalidWorkflowDefinitionError) {
+        throw new UnprocessableEntityException({
+          message: 'Stored definition is no longer valid against the current schema',
+          issues: error.issues,
+        });
+      }
+      throw error;
+    }
+  }
+
+  /** Strips the write-only webhook secret before a workflow leaves the service. */
+  private toSafe<T extends Workflow>(workflow: T): Omit<T, 'webhookToken'> {
+    const { webhookToken: _redacted, ...safe } = workflow;
+    return safe;
+  }
+
+  private rethrow(error: unknown, name: string): never {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      throw new ConflictException(`A workflow named "${name}" already exists in this tenant`);
+    }
+    throw error;
+  }
+}
