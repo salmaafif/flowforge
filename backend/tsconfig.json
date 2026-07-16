@@ -5,7 +5,6 @@
     "emitDecoratorMetadata": true,
     "outDir": "./dist",
     "rootDir": "./src",
-    "incremental": true,
     "declaration": false,
     "sourceMap": true
   },
