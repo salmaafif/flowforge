@@ -15,6 +15,7 @@ import { WorkflowDag } from '../engine/dag/workflow-dag';
 import { WorkflowDefinition } from '../engine/dag/workflow-definition.schema';
 import { WorkflowDefinitionValidator } from '../engine/dag/workflow-definition.validator';
 import { PrismaService } from '../prisma/prisma.service';
+import { WorkflowSchedulerService } from '../scheduling/workflow-scheduler.service';
 import { CreateVersionDto } from './dto/create-version.dto';
 import { CreateWorkflowDto } from './dto/create-workflow.dto';
 import { ListWorkflowsQueryDto } from './dto/list-workflows-query.dto';
@@ -36,13 +37,14 @@ export class WorkflowsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly definitionValidator: WorkflowDefinitionValidator,
+    private readonly scheduler: WorkflowSchedulerService,
   ) {}
 
   async create(user: AuthenticatedUser, dto: CreateWorkflowDto): Promise<Workflow> {
     this.assertExecutable(dto.definition);
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const created = await this.prisma.$transaction(async (tx) => {
         const workflow = await tx.workflow.create({
           data: {
             tenantId: user.tenantId,
@@ -61,6 +63,8 @@ export class WorkflowsService {
         });
         return { ...workflow, versions: [version] };
       });
+      this.scheduler.sync(created);
+      return created;
     } catch (error) {
       this.rethrow(error, dto.name);
     }
@@ -113,7 +117,9 @@ export class WorkflowsService {
   ): Promise<Workflow> {
     await this.getOwnedWorkflow(user, workflowId);
     try {
-      return await this.prisma.workflow.update({ where: { id: workflowId }, data: dto });
+      const updated = await this.prisma.workflow.update({ where: { id: workflowId }, data: dto });
+      this.scheduler.sync(updated);
+      return updated;
     } catch (error) {
       this.rethrow(error, dto.name ?? '');
     }
@@ -123,6 +129,7 @@ export class WorkflowsService {
     await this.getOwnedWorkflow(user, workflowId);
     // Cascades to versions, runs, and steps via the schema's referential actions.
     await this.prisma.workflow.delete({ where: { id: workflowId } });
+    this.scheduler.unregister(workflowId);
   }
 
   async listVersions(

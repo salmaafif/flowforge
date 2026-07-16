@@ -78,17 +78,70 @@ export class RunsService {
 
     const definition = this.parseDefinition(version.definition);
 
-    const run = await this.prisma.run.create({
-      data: {
-        tenantId: user.tenantId,
+    return this.startRun({
+      tenantId: user.tenantId,
+      workflowId,
+      workflowVersionId: version.id,
+      definition,
+      trigger: TriggerType.MANUAL,
+      triggeredById: user.userId,
+      input: dto.input,
+    });
+  }
+
+  /**
+   * Entry point for the cron scheduler. Unlike manual triggering there is no HTTP
+   * caller: problems are logged and swallowed so one broken workflow can never
+   * crash the scheduler loop.
+   */
+  async triggerScheduled(workflowId: string, tenantId: string): Promise<void> {
+    try {
+      const workflow = await this.prisma.workflow.findFirst({
+        where: { id: workflowId, tenantId },
+        include: { versions: { orderBy: { version: 'desc' }, take: 1 } },
+      });
+      const version = workflow?.versions[0];
+      if (!workflow?.enabled || !version) {
+        this.logger.warn(`Skipping scheduled run for workflow ${workflowId}`);
+        return;
+      }
+
+      const definition = this.definitionValidator.validate(version.definition);
+      await this.startRun({
+        tenantId,
         workflowId,
         workflowVersionId: version.id,
+        definition,
+        trigger: TriggerType.SCHEDULED,
+        triggeredById: null,
+        input: undefined,
+      });
+    } catch (error) {
+      this.logger.error(`Scheduled trigger failed for workflow ${workflowId}: ${String(error)}`);
+    }
+  }
+
+  /** Creates the run + pending steps, then hands execution to the background. */
+  private async startRun(params: {
+    tenantId: string;
+    workflowId: string;
+    workflowVersionId: string;
+    definition: WorkflowDefinition;
+    trigger: TriggerType;
+    triggeredById: string | null;
+    input: unknown;
+  }): Promise<RunWithSteps> {
+    const run = await this.prisma.run.create({
+      data: {
+        tenantId: params.tenantId,
+        workflowId: params.workflowId,
+        workflowVersionId: params.workflowVersionId,
         status: RunStatus.RUNNING,
-        trigger: TriggerType.MANUAL,
-        triggeredById: user.userId,
+        trigger: params.trigger,
+        triggeredById: params.triggeredById,
         startedAt: new Date(),
         steps: {
-          create: definition.steps.map((step) => ({
+          create: params.definition.steps.map((step) => ({
             stepKey: step.key,
             name: step.name,
             type: StepType[step.type],
@@ -101,7 +154,7 @@ export class RunsService {
 
     // Fire-and-forget: the run continues after the HTTP response. In-process only —
     // a queue (e.g. BullMQ) would make this survive restarts; noted as a trade-off.
-    void this.executeAndPersist(run.id, definition, dto.input);
+    void this.executeAndPersist(run.id, params.definition, params.input);
 
     return run;
   }

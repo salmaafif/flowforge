@@ -4,6 +4,7 @@ import { Prisma, Role } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/auth.types';
 import { WorkflowDefinitionValidator } from '../engine/dag/workflow-definition.validator';
 import { PrismaService } from '../prisma/prisma.service';
+import { WorkflowSchedulerService } from '../scheduling/workflow-scheduler.service';
 import { WorkflowsService } from './workflows.service';
 
 const validator = new WorkflowDefinitionValidator();
@@ -46,7 +47,13 @@ describe('WorkflowsService', () => {
     $transaction: jest.fn(),
   };
 
-  const service = new WorkflowsService(prismaMock as unknown as PrismaService, validator);
+  const schedulerMock = { sync: jest.fn(), unregister: jest.fn() };
+
+  const service = new WorkflowsService(
+    prismaMock as unknown as PrismaService,
+    validator,
+    schedulerMock as unknown as WorkflowSchedulerService,
+  );
 
   const storedWorkflow = { id: 'wf-1', tenantId: 'tenant-1', name: 'ETL' };
 
@@ -152,9 +159,18 @@ describe('WorkflowsService', () => {
       expect(prismaMock.workflow.update).not.toHaveBeenCalled();
     });
 
-    it('deletes an owned workflow', async () => {
+    it('deletes an owned workflow and unregisters its schedule', async () => {
       await service.remove(user, 'wf-1');
       expect(prismaMock.workflow.delete).toHaveBeenCalledWith({ where: { id: 'wf-1' } });
+      expect(schedulerMock.unregister).toHaveBeenCalledWith('wf-1');
+    });
+
+    it('re-syncs the schedule after an update', async () => {
+      const updated = { ...storedWorkflow, enabled: false };
+      prismaMock.workflow.update.mockResolvedValue(updated);
+
+      await service.update(user, 'wf-1', { enabled: false });
+      expect(schedulerMock.sync).toHaveBeenCalledWith(updated);
     });
   });
 

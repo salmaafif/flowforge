@@ -164,6 +164,30 @@ describe('RunsService', () => {
     });
   });
 
+  describe('triggerScheduled', () => {
+    it('creates a SCHEDULED run without a triggering user', async () => {
+      await service.triggerScheduled('wf-1', 'tenant-1');
+
+      expect(prismaMock.run.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ trigger: 'SCHEDULED', triggeredById: null }),
+        }),
+      );
+    });
+
+    it('silently skips a workflow that was disabled meanwhile', async () => {
+      prismaMock.workflow.findFirst.mockResolvedValue({ ...workflowWithVersion, enabled: false });
+
+      await service.triggerScheduled('wf-1', 'tenant-1');
+      expect(prismaMock.run.create).not.toHaveBeenCalled();
+    });
+
+    it('never throws even when the lookup explodes', async () => {
+      prismaMock.workflow.findFirst.mockRejectedValue(new Error('db down'));
+      await expect(service.triggerScheduled('wf-1', 'tenant-1')).resolves.toBeUndefined();
+    });
+  });
+
   describe('reads', () => {
     it('scopes run detail to the tenant', async () => {
       prismaMock.run.findFirst.mockResolvedValue(null);
