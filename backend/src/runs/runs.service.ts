@@ -13,12 +13,14 @@ import { InvalidWorkflowDefinitionError } from '../engine/dag/errors';
 import { WorkflowDefinition } from '../engine/dag/workflow-definition.schema';
 import { WorkflowDefinitionValidator } from '../engine/dag/workflow-definition.validator';
 import {
+  StepEvent,
   StepOutcome,
   WorkflowEngine,
   WorkflowRunResult,
   WorkflowRunStatus,
 } from '../engine/workflow-engine';
 import { PrismaService } from '../prisma/prisma.service';
+import { RunEventsService } from '../realtime/run-events.service';
 import { TriggerRunDto } from './dto/trigger-run.dto';
 
 export type RunWithSteps = Prisma.RunGetPayload<{ include: { steps: true } }>;
@@ -54,6 +56,7 @@ export class RunsService {
     private readonly prisma: PrismaService,
     private readonly engine: WorkflowEngine,
     private readonly definitionValidator: WorkflowDefinitionValidator,
+    private readonly runEvents: RunEventsService,
   ) {}
 
   async trigger(
@@ -183,9 +186,22 @@ export class RunsService {
       include: { steps: true },
     });
 
+    this.runEvents.emit({
+      type: 'run-started',
+      tenantId: params.tenantId,
+      workflowId: params.workflowId,
+      runId: run.id,
+    });
+
     // Fire-and-forget: the run continues after the HTTP response. In-process only —
     // a queue (e.g. BullMQ) would make this survive restarts; noted as a trade-off.
-    void this.executeAndPersist(run.id, params.definition, params.input);
+    void this.executeAndPersist({
+      runId: run.id,
+      tenantId: params.tenantId,
+      workflowId: params.workflowId,
+      definition: params.definition,
+      input: params.input,
+    });
 
     return run;
   }
@@ -226,16 +242,38 @@ export class RunsService {
     return run;
   }
 
-  private async executeAndPersist(
-    runId: string,
-    definition: WorkflowDefinition,
-    input: unknown,
-  ): Promise<void> {
+  private async executeAndPersist(context: {
+    runId: string;
+    tenantId: string;
+    workflowId: string;
+    definition: WorkflowDefinition;
+    input: unknown;
+  }): Promise<void> {
+    const { runId, tenantId, workflowId, definition, input } = context;
     try {
-      const result = await this.engine.execute(definition, { input });
+      const result = await this.engine.execute(definition, {
+        input,
+        listener: {
+          onStepEvent: (event) => this.publishStepEvent(context, event),
+        },
+      });
       await this.persistResult(runId, result);
+      this.runEvents.emit({
+        type: 'run-finished',
+        tenantId,
+        workflowId,
+        runId,
+        status: RUN_STATUS_MAP[result.status],
+      });
     } catch (error) {
       this.logger.error(`Run ${runId} crashed: ${String(error)}`);
+      this.runEvents.emit({
+        type: 'run-finished',
+        tenantId,
+        workflowId,
+        runId,
+        status: RunStatus.FAILED,
+      });
       await this.prisma.run
         .update({
           where: { id: runId },
@@ -245,6 +283,23 @@ export class RunsService {
           this.logger.error(`Failed to mark run ${runId} as failed: ${String(persistError)}`),
         );
     }
+  }
+
+  /** Translates an engine step event into a tenant-tagged realtime event. */
+  private publishStepEvent(
+    context: { runId: string; tenantId: string; workflowId: string },
+    event: StepEvent,
+  ): void {
+    this.runEvents.emit({
+      type: event.type,
+      tenantId: context.tenantId,
+      workflowId: context.workflowId,
+      runId: context.runId,
+      stepKey: event.key,
+      ...('error' in event ? { error: event.error } : {}),
+      ...('output' in event ? { output: event.output } : {}),
+      ...('attempt' in event ? { attempt: event.attempt, delayMs: event.delayMs } : {}),
+    });
   }
 
   /** Writes the engine's final result into the run + step records atomically. */

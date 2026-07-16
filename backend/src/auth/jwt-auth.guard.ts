@@ -43,7 +43,14 @@ export class JwtAuthGuard implements CanActivate {
 
   private extractBearerToken(request: RequestWithUser): string | undefined {
     const [scheme, token] = request.headers.authorization?.split(' ') ?? [];
-    return scheme === 'Bearer' ? token : undefined;
+    if (scheme === 'Bearer' && token) {
+      return token;
+    }
+    // Fallback for SSE: the browser's EventSource API cannot set headers, so the
+    // dashboard passes ?access_token=. Trade-off: tokens can end up in access logs;
+    // acceptable for short-lived JWTs here, avoidable with cookie auth later.
+    const queryToken = (request.query as Record<string, unknown> | undefined)?.access_token;
+    return typeof queryToken === 'string' && queryToken.length > 0 ? queryToken : undefined;
   }
 
   private toAuthenticatedUser(payload: JwtPayload): AuthenticatedUser {

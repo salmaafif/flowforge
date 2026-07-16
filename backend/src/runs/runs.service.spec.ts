@@ -5,6 +5,7 @@ import { AuthenticatedUser } from '../auth/auth.types';
 import { WorkflowDefinitionValidator } from '../engine/dag/workflow-definition.validator';
 import { WorkflowEngine, WorkflowRunResult } from '../engine/workflow-engine';
 import { PrismaService } from '../prisma/prisma.service';
+import { RunEventsService } from '../realtime/run-events.service';
 import { RunsService } from './runs.service';
 
 const validator = new WorkflowDefinitionValidator();
@@ -68,11 +69,13 @@ describe('RunsService', () => {
     $transaction: jest.fn(),
   };
   const engineMock = { execute: jest.fn() };
+  const runEventsMock = { emit: jest.fn() };
 
   const service = new RunsService(
     prismaMock as unknown as PrismaService,
     engineMock as unknown as WorkflowEngine,
     validator,
+    runEventsMock as unknown as RunEventsService,
   );
 
   beforeEach(() => {
@@ -113,7 +116,10 @@ describe('RunsService', () => {
       await service.trigger(user, 'wf-1', { input: { x: 1 } });
       await flushAsync();
 
-      expect(engineMock.execute).toHaveBeenCalledWith(definition, { input: { x: 1 } });
+      expect(engineMock.execute).toHaveBeenCalledWith(
+        definition,
+        expect.objectContaining({ input: { x: 1 } }),
+      );
       // Step a: succeeded with output; step b: engine ABORTED -> stored as FAILED.
       expect(prismaMock.runStep.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -132,6 +138,37 @@ describe('RunsService', () => {
           where: { id: 'run-1' },
           data: expect.objectContaining({ status: RunStatus.FAILED }),
         }),
+      );
+    });
+
+    it('publishes run-started, forwarded step events, and run-finished', async () => {
+      engineMock.execute.mockImplementation(
+        async (
+          _definition: unknown,
+          options: { listener?: { onStepEvent: (event: unknown) => void } },
+        ) => {
+          options.listener?.onStepEvent({ type: 'step-started', key: 'a' });
+          options.listener?.onStepEvent({ type: 'step-succeeded', key: 'a', output: 42 });
+          return engineResult;
+        },
+      );
+
+      await service.trigger(user, 'wf-1', {});
+      await flushAsync();
+
+      const types = runEventsMock.emit.mock.calls.map((call) => (call[0] as { type: string }).type);
+      expect(types).toEqual(['run-started', 'step-started', 'step-succeeded', 'run-finished']);
+      expect(runEventsMock.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'step-succeeded',
+          tenantId: 'tenant-1',
+          runId: 'run-1',
+          stepKey: 'a',
+          output: 42,
+        }),
+      );
+      expect(runEventsMock.emit).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'run-finished', status: RunStatus.FAILED }),
       );
     });
 
@@ -203,7 +240,10 @@ describe('RunsService', () => {
           data: expect.objectContaining({ trigger: 'WEBHOOK', triggeredById: null }),
         }),
       );
-      expect(engineMock.execute).toHaveBeenCalledWith(definition, { input: { order: 42 } });
+      expect(engineMock.execute).toHaveBeenCalledWith(
+        definition,
+        expect.objectContaining({ input: { order: 42 } }),
+      );
     });
 
     it('answers 404 for an unknown token', async () => {

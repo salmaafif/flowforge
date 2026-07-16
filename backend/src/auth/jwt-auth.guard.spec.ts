@@ -23,8 +23,9 @@ describe('JwtAuthGuard', () => {
 
   const createContext = (
     authorization?: string,
+    query: Record<string, unknown> = {},
   ): { context: ExecutionContext; request: RequestWithUser } => {
-    const request = { headers: { authorization } } as RequestWithUser;
+    const request = { headers: { authorization }, query } as unknown as RequestWithUser;
     const context = {
       getHandler: jest.fn(),
       getClass: jest.fn(),
@@ -74,5 +75,14 @@ describe('JwtAuthGuard', () => {
       email: 'admin@acme.test',
       role: Role.ADMIN,
     });
+  });
+
+  it('accepts ?access_token= as a fallback (SSE/EventSource cannot set headers)', async () => {
+    jwtMock.verifyAsync.mockResolvedValue(payload);
+    const { context, request } = createContext(undefined, { access_token: 'query-token' });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(jwtMock.verifyAsync).toHaveBeenCalledWith('query-token');
+    expect(request.user?.tenantId).toBe('tenant-1');
   });
 });
