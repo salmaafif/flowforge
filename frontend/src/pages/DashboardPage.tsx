@@ -1,6 +1,7 @@
 import { useAuth } from '../auth/AuthContext';
+import { WorkflowList } from '../components/WorkflowList';
 
-/** Placeholder dashboard — workflow list, live runs, and health arrive next. */
+/** Dashboard shell: header + workflow list (live runs and health arrive next). */
 export function DashboardPage() {
   const { auth, logout } = useAuth();
 
@@ -29,7 +30,7 @@ export function DashboardPage() {
       </header>
 
       <main className="mx-auto max-w-6xl px-6 py-10">
-        <p className="text-slate-400">Workflows will appear here in the next step.</p>
+        <WorkflowList />
       </main>
     </div>
   );
