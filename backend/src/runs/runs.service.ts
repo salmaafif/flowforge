@@ -25,6 +25,15 @@ import { TriggerRunDto } from './dto/trigger-run.dto';
 
 export type RunWithSteps = Prisma.RunGetPayload<{ include: { steps: true } }>;
 
+/** Run detail incl. the executed definition, so the UI can draw the DAG. */
+export type RunDetail = Prisma.RunGetPayload<{
+  include: {
+    steps: true;
+    workflow: { select: { name: true } };
+    workflowVersion: { select: { version: true; definition: true } };
+  };
+}>;
+
 const RUN_STATUS_MAP: Record<WorkflowRunStatus, RunStatus> = {
   SUCCEEDED: RunStatus.SUCCEEDED,
   FAILED: RunStatus.FAILED,
@@ -231,10 +240,14 @@ export class RunsService {
     return paginate(data, total, query.page, query.pageSize);
   }
 
-  async findOne(user: AuthenticatedUser, runId: string): Promise<RunWithSteps> {
+  async findOne(user: AuthenticatedUser, runId: string): Promise<RunDetail> {
     const run = await this.prisma.run.findFirst({
       where: { id: runId, tenantId: user.tenantId },
-      include: { steps: true },
+      include: {
+        steps: true,
+        workflow: { select: { name: true } },
+        workflowVersion: { select: { version: true, definition: true } },
+      },
     });
     if (!run) {
       throw new NotFoundException('Run not found');

@@ -62,6 +62,19 @@ export interface RunWithSteps extends Run {
   steps: RunStep[];
 }
 
+/** Minimal slice of the stored DAG definition needed to draw the graph. */
+export interface DefinitionStep {
+  key: string;
+  name: string;
+  type: 'HTTP' | 'SCRIPT' | 'DELAY' | 'CONDITION';
+  dependsOn?: string[];
+}
+
+export interface RunDetail extends RunWithSteps {
+  workflow: { name: string };
+  workflowVersion: { version: number; definition: { steps: DefinitionStep[] } };
+}
+
 /** Mirrors backend/src/realtime/run-events.ts — one flat shape for every event. */
 export interface RunEvent {
   type:

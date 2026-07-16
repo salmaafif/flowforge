@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 
 import { getRun } from '../api/runs';
 import type { RunStatus, RunStep, StepStatus } from '../api/types';
+import { DagView } from '../components/DagView';
 import { useRunLiveUpdates } from '../hooks/useRunLiveUpdates';
 
 const RUN_BADGE: Record<RunStatus, string> = {
@@ -58,13 +59,27 @@ export function RunPage() {
 
         {run && (
           <>
-            <div className="mb-8">
-              <h1 className="text-xl font-semibold">Run {run.id.slice(0, 8)}</h1>
+            <div className="mb-6">
+              <h1 className="text-xl font-semibold">
+                {run.workflow.name}
+                <span className="ml-2 text-sm font-normal text-slate-500">
+                  v{run.workflowVersion.version} · run {run.id.slice(0, 8)}
+                </span>
+              </h1>
               <p className="mt-1 text-sm text-slate-500">
                 Trigger: {run.trigger} · Started:{' '}
                 {run.startedAt ? new Date(run.startedAt).toLocaleTimeString() : '—'}
                 {run.finishedAt && ` · Finished: ${new Date(run.finishedAt).toLocaleTimeString()}`}
               </p>
+            </div>
+
+            <div className="mb-8">
+              <DagView
+                steps={run.workflowVersion.definition.steps}
+                statusByKey={Object.fromEntries(
+                  run.steps.map((step) => [step.stepKey, step.status]),
+                )}
+              />
             </div>
 
             <ol className="space-y-3">

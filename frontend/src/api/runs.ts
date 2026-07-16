@@ -1,6 +1,6 @@
 import { api } from './client';
-import type { RunWithSteps } from './types';
+import type { RunDetail } from './types';
 
-export function getRun(runId: string): Promise<RunWithSteps> {
+export function getRun(runId: string): Promise<RunDetail> {
   return api(`/runs/${runId}`);
 }

@@ -17,7 +17,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { Paginated, PaginationQuery, paginationQuerySchema } from '../common/pagination';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { TriggerRunDto, triggerRunSchema } from './dto/trigger-run.dto';
-import { RunWithSteps, RunsService } from './runs.service';
+import { RunDetail, RunWithSteps, RunsService } from './runs.service';
 
 /**
  * Run endpoints: manual triggering plus run history reads. Triggering answers
@@ -51,7 +51,7 @@ export class RunsController {
   findOne(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) runId: string,
-  ): Promise<RunWithSteps> {
+  ): Promise<RunDetail> {
     return this.runsService.findOne(user, runId);
   }
 }
