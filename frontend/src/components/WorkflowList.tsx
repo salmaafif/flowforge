@@ -1,5 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 import { listWorkflows, triggerWorkflow, updateWorkflow } from '../api/workflows';
 import type { Paginated, WorkflowSummary } from '../api/types';
@@ -15,9 +16,9 @@ const PAGE_SIZE = 10;
 export function WorkflowList() {
   const { auth } = useAuth();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
-  const [lastRun, setLastRun] = useState<{ workflowId: string; runId: string } | null>(null);
 
   const canEdit = auth?.user.role === 'ADMIN' || auth?.user.role === 'EDITOR';
 
@@ -29,7 +30,8 @@ export function WorkflowList() {
 
   const triggerMutation = useMutation({
     mutationFn: triggerWorkflow,
-    onSuccess: (run) => setLastRun({ workflowId: run.workflowId, runId: run.id }),
+    // Jump straight into the live view so the run can be watched as it executes.
+    onSuccess: (run) => navigate(`/runs/${run.id}`),
   });
 
   const toggleMutation = useMutation({
@@ -118,11 +120,6 @@ export function WorkflowList() {
               </div>
               {workflow.description && (
                 <p className="mt-1 truncate text-sm text-slate-500">{workflow.description}</p>
-              )}
-              {lastRun?.workflowId === workflow.id && (
-                <p className="mt-1 text-xs text-emerald-400">
-                  Run started: {lastRun.runId.slice(0, 8)}…
-                </p>
               )}
             </div>
 

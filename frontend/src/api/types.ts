@@ -61,3 +61,26 @@ export interface Run {
 export interface RunWithSteps extends Run {
   steps: RunStep[];
 }
+
+/** Mirrors backend/src/realtime/run-events.ts — one flat shape for every event. */
+export interface RunEvent {
+  type:
+    | 'run-started'
+    | 'run-finished'
+    | 'step-started'
+    | 'step-succeeded'
+    | 'step-failed'
+    | 'step-skipped'
+    | 'step-aborted'
+    | 'step-retrying';
+  tenantId: string;
+  workflowId: string;
+  runId: string;
+  stepKey?: string;
+  status?: RunStatus;
+  error?: string;
+  attempt?: number;
+  delayMs?: number;
+  output?: unknown;
+  timestamp: string;
+}
