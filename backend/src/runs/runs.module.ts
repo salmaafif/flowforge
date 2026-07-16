@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { createDefaultStepExecutorRegistry } from '../engine/execution/default-registry';
 import { WorkflowDefinitionValidator } from '../engine/dag/workflow-definition.validator';
 import { WorkflowEngine } from '../engine/workflow-engine';
+import { HooksController } from './hooks.controller';
 import { RunsController } from './runs.controller';
 import { RunsService } from './runs.service';
 
@@ -11,7 +12,7 @@ import { RunsService } from './runs.service';
  * step executors and exposed to the HTTP layer through RunsService.
  */
 @Module({
-  controllers: [RunsController],
+  controllers: [RunsController, HooksController],
   providers: [
     RunsService,
     WorkflowDefinitionValidator,

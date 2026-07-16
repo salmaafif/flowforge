@@ -174,6 +174,40 @@ describe('WorkflowsService', () => {
     });
   });
 
+  describe('webhook', () => {
+    it('generates an unguessable token and stores it', async () => {
+      prismaMock.workflow.update.mockResolvedValue(storedWorkflow);
+
+      const result = await service.enableWebhook(user, 'wf-1');
+
+      expect(result.webhookToken.length).toBeGreaterThanOrEqual(32);
+      expect(result.url).toBe(`/hooks/${result.webhookToken}`);
+      expect(prismaMock.workflow.update).toHaveBeenCalledWith({
+        where: { id: 'wf-1' },
+        data: { webhookToken: result.webhookToken },
+      });
+    });
+
+    it('revokes the token', async () => {
+      prismaMock.workflow.update.mockResolvedValue(storedWorkflow);
+      await service.disableWebhook(user, 'wf-1');
+      expect(prismaMock.workflow.update).toHaveBeenCalledWith({
+        where: { id: 'wf-1' },
+        data: { webhookToken: null },
+      });
+    });
+
+    it('never returns the token from reads', async () => {
+      prismaMock.workflow.findFirst.mockResolvedValue({
+        ...storedWorkflow,
+        webhookToken: 'super-secret',
+      });
+
+      const result = await service.findOne(user, 'wf-1');
+      expect(result).not.toHaveProperty('webhookToken');
+    });
+  });
+
   describe('versioning', () => {
     it('appends the next version number', async () => {
       prismaMock.workflowVersion.findFirst.mockResolvedValue({ version: 3 });

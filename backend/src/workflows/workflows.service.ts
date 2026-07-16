@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+
 import {
   BadRequestException,
   ConflictException,
@@ -21,6 +23,9 @@ import { CreateWorkflowDto } from './dto/create-workflow.dto';
 import { ListWorkflowsQueryDto } from './dto/list-workflows-query.dto';
 import { UpdateWorkflowDto } from './dto/update-workflow.dto';
 
+/** Workflow with the write-only webhook secret removed — the shape every read returns. */
+export type SafeWorkflow<T extends Workflow = Workflow> = Omit<T, 'webhookToken'>;
+
 /**
  * Tenant-scoped workflow CRUD with append-only versioning.
  *
@@ -31,6 +36,10 @@ import { UpdateWorkflowDto } from './dto/update-workflow.dto';
  * Versioning: definitions are immutable. Editing publishes version N+1; rolling
  * back to version K publishes a new version whose definition copies K. History is
  * never rewritten, and runs keep pointing at the exact version they executed.
+ *
+ * Webhook tokens are write-only: they are returned once when (re)generated and
+ * stripped from every read, so a Viewer can never lift the token and use it to
+ * trigger runs around RBAC.
  */
 @Injectable()
 export class WorkflowsService {
@@ -40,7 +49,7 @@ export class WorkflowsService {
     private readonly scheduler: WorkflowSchedulerService,
   ) {}
 
-  async create(user: AuthenticatedUser, dto: CreateWorkflowDto): Promise<Workflow> {
+  async create(user: AuthenticatedUser, dto: CreateWorkflowDto): Promise<SafeWorkflow> {
     this.assertExecutable(dto.definition);
 
     try {
@@ -64,7 +73,7 @@ export class WorkflowsService {
         return { ...workflow, versions: [version] };
       });
       this.scheduler.sync(created);
-      return created;
+      return this.toSafe(created);
     } catch (error) {
       this.rethrow(error, dto.name);
     }
@@ -73,7 +82,7 @@ export class WorkflowsService {
   async findAll(
     user: AuthenticatedUser,
     query: ListWorkflowsQueryDto,
-  ): Promise<Paginated<Workflow>> {
+  ): Promise<Paginated<SafeWorkflow>> {
     const where: Prisma.WorkflowWhereInput = {
       tenantId: user.tenantId,
       ...(query.search ? { name: { contains: query.search, mode: 'insensitive' } } : {}),
@@ -96,10 +105,15 @@ export class WorkflowsService {
       }),
     ]);
 
-    return paginate(data, total, query.page, query.pageSize);
+    return paginate(
+      data.map((workflow) => this.toSafe(workflow)),
+      total,
+      query.page,
+      query.pageSize,
+    );
   }
 
-  async findOne(user: AuthenticatedUser, workflowId: string): Promise<Workflow> {
+  async findOne(user: AuthenticatedUser, workflowId: string): Promise<SafeWorkflow> {
     const workflow = await this.prisma.workflow.findFirst({
       where: { id: workflowId, tenantId: user.tenantId },
       include: { versions: { orderBy: { version: 'desc' }, take: 1 } },
@@ -107,22 +121,44 @@ export class WorkflowsService {
     if (!workflow) {
       throw new NotFoundException('Workflow not found');
     }
-    return workflow;
+    return this.toSafe(workflow);
   }
 
   async update(
     user: AuthenticatedUser,
     workflowId: string,
     dto: UpdateWorkflowDto,
-  ): Promise<Workflow> {
+  ): Promise<SafeWorkflow> {
     await this.getOwnedWorkflow(user, workflowId);
     try {
       const updated = await this.prisma.workflow.update({ where: { id: workflowId }, data: dto });
       this.scheduler.sync(updated);
-      return updated;
+      return this.toSafe(updated);
     } catch (error) {
       this.rethrow(error, dto.name ?? '');
     }
+  }
+
+  /**
+   * Generates (or rotates) the webhook token. The token is only ever returned
+   * here — reads never include it.
+   */
+  async enableWebhook(
+    user: AuthenticatedUser,
+    workflowId: string,
+  ): Promise<{ webhookToken: string; url: string }> {
+    await this.getOwnedWorkflow(user, workflowId);
+    const webhookToken = randomBytes(24).toString('base64url');
+    await this.prisma.workflow.update({ where: { id: workflowId }, data: { webhookToken } });
+    return { webhookToken, url: `/hooks/${webhookToken}` };
+  }
+
+  async disableWebhook(user: AuthenticatedUser, workflowId: string): Promise<void> {
+    await this.getOwnedWorkflow(user, workflowId);
+    await this.prisma.workflow.update({
+      where: { id: workflowId },
+      data: { webhookToken: null },
+    });
   }
 
   async remove(user: AuthenticatedUser, workflowId: string): Promise<void> {
@@ -231,6 +267,12 @@ export class WorkflowsService {
       }
       throw error;
     }
+  }
+
+  /** Strips the write-only webhook secret before a workflow leaves the service. */
+  private toSafe<T extends Workflow>(workflow: T): Omit<T, 'webhookToken'> {
+    const { webhookToken: _redacted, ...safe } = workflow;
+    return safe;
   }
 
   private rethrow(error: unknown, name: string): never {

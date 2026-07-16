@@ -12,7 +12,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { Role, Workflow, WorkflowVersion } from '@prisma/client';
+import { Role, WorkflowVersion } from '@prisma/client';
 
 import { AuthenticatedUser } from '../auth/auth.types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -23,7 +23,7 @@ import { CreateVersionDto, createVersionSchema } from './dto/create-version.dto'
 import { CreateWorkflowDto, createWorkflowSchema } from './dto/create-workflow.dto';
 import { ListWorkflowsQueryDto, listWorkflowsQuerySchema } from './dto/list-workflows-query.dto';
 import { UpdateWorkflowDto, updateWorkflowSchema } from './dto/update-workflow.dto';
-import { WorkflowsService } from './workflows.service';
+import { SafeWorkflow, WorkflowsService } from './workflows.service';
 
 /**
  * Workflow CRUD + versioning endpoints. Reads need any authenticated user
@@ -39,7 +39,7 @@ export class WorkflowsController {
   create(
     @CurrentUser() user: AuthenticatedUser,
     @Body(new ZodValidationPipe(createWorkflowSchema)) dto: CreateWorkflowDto,
-  ): Promise<Workflow> {
+  ): Promise<SafeWorkflow> {
     return this.workflowsService.create(user, dto);
   }
 
@@ -47,7 +47,7 @@ export class WorkflowsController {
   findAll(
     @CurrentUser() user: AuthenticatedUser,
     @Query(new ZodValidationPipe(listWorkflowsQuerySchema)) query: ListWorkflowsQueryDto,
-  ): Promise<Paginated<Workflow>> {
+  ): Promise<Paginated<SafeWorkflow>> {
     return this.workflowsService.findAll(user, query);
   }
 
@@ -55,7 +55,7 @@ export class WorkflowsController {
   findOne(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,
-  ): Promise<Workflow> {
+  ): Promise<SafeWorkflow> {
     return this.workflowsService.findOne(user, id);
   }
 
@@ -65,7 +65,7 @@ export class WorkflowsController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(updateWorkflowSchema)) dto: UpdateWorkflowDto,
-  ): Promise<Workflow> {
+  ): Promise<SafeWorkflow> {
     return this.workflowsService.update(user, id, dto);
   }
 
@@ -77,6 +77,25 @@ export class WorkflowsController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<void> {
     return this.workflowsService.remove(user, id);
+  }
+
+  @Post(':id/webhook')
+  @Roles(Role.EDITOR)
+  enableWebhook(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<{ webhookToken: string; url: string }> {
+    return this.workflowsService.enableWebhook(user, id);
+  }
+
+  @Delete(':id/webhook')
+  @Roles(Role.EDITOR)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  disableWebhook(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    return this.workflowsService.disableWebhook(user, id);
   }
 
   @Get(':id/versions')

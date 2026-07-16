@@ -56,7 +56,7 @@ const flushAsync = (): Promise<void> => new Promise((resolve) => setImmediate(re
 
 describe('RunsService', () => {
   const prismaMock = {
-    workflow: { findFirst: jest.fn() },
+    workflow: { findFirst: jest.fn(), findUnique: jest.fn() },
     run: {
       create: jest.fn(),
       update: jest.fn(),
@@ -185,6 +185,37 @@ describe('RunsService', () => {
     it('never throws even when the lookup explodes', async () => {
       prismaMock.workflow.findFirst.mockRejectedValue(new Error('db down'));
       await expect(service.triggerScheduled('wf-1', 'tenant-1')).resolves.toBeUndefined();
+    });
+  });
+
+  describe('triggerByWebhook', () => {
+    const withToken = { ...workflowWithVersion, webhookToken: 'tok-123' };
+
+    it('creates a WEBHOOK run carrying the request body as input', async () => {
+      prismaMock.workflow.findUnique.mockResolvedValue(withToken);
+
+      const result = await service.triggerByWebhook('tok-123', { order: 42 });
+      await flushAsync();
+
+      expect(result.runId).toBe('run-1');
+      expect(prismaMock.run.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ trigger: 'WEBHOOK', triggeredById: null }),
+        }),
+      );
+      expect(engineMock.execute).toHaveBeenCalledWith(definition, { input: { order: 42 } });
+    });
+
+    it('answers 404 for an unknown token', async () => {
+      prismaMock.workflow.findUnique.mockResolvedValue(null);
+      await expect(service.triggerByWebhook('nope', {})).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('answers the same 404 when the workflow is disabled', async () => {
+      prismaMock.workflow.findUnique.mockResolvedValue({ ...withToken, enabled: false });
+      await expect(service.triggerByWebhook('tok-123', {})).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
   });
 

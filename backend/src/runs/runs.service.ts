@@ -90,6 +90,37 @@ export class RunsService {
   }
 
   /**
+   * Public webhook entry point. The token is the only credential; every failure
+   * mode (unknown token, disabled workflow, no version) answers the same 404 so
+   * outsiders cannot probe which tokens exist.
+   */
+  async triggerByWebhook(
+    token: string,
+    input: unknown,
+  ): Promise<{ runId: string; status: RunStatus }> {
+    const workflow = await this.prisma.workflow.findUnique({
+      where: { webhookToken: token },
+      include: { versions: { orderBy: { version: 'desc' }, take: 1 } },
+    });
+    const version = workflow?.versions[0];
+    if (!workflow?.enabled || !version) {
+      throw new NotFoundException('Unknown webhook');
+    }
+
+    const definition = this.parseDefinition(version.definition);
+    const run = await this.startRun({
+      tenantId: workflow.tenantId,
+      workflowId: workflow.id,
+      workflowVersionId: version.id,
+      definition,
+      trigger: TriggerType.WEBHOOK,
+      triggeredById: null,
+      input,
+    });
+    return { runId: run.id, status: run.status };
+  }
+
+  /**
    * Entry point for the cron scheduler. Unlike manual triggering there is no HTTP
    * caller: problems are logged and swallowed so one broken workflow can never
    * crash the scheduler loop.
