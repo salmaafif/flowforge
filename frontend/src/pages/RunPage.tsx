@@ -2,10 +2,13 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 
 import { getRun } from '../api/runs';
-import type { RunStep, StepStatus } from '../api/types';
+import type { RunStatus, RunStep, StepStatus } from '../api/types';
+import { AnalysisPanel } from '../components/AnalysisPanel';
 import { DagView } from '../components/DagView';
 import { RunStatusBadge } from '../components/RunStatusBadge';
 import { useRunLiveUpdates } from '../hooks/useRunLiveUpdates';
+
+const ANALYZABLE: RunStatus[] = ['FAILED', 'TIMED_OUT'];
 
 const STEP_DOT: Record<StepStatus, string> = {
   PENDING: 'bg-slate-600',
@@ -69,6 +72,8 @@ export function RunPage() {
                 )}
               />
             </div>
+
+            {ANALYZABLE.includes(run.status) && <AnalysisPanel runId={run.id} />}
 
             <ol className="space-y-3">
               {run.steps.map((step) => (
