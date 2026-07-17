@@ -9,7 +9,7 @@ import { Role, RunStatus, StepStatus } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { FailureAnalysisService } from './failure-analysis.service';
-import { GeminiApiError, GeminiClient } from './gemini.client';
+import { GroqApiError, GroqClient } from './groq.client';
 
 const user: AuthenticatedUser = {
   userId: 'user-1',
@@ -55,29 +55,29 @@ const analysis = {
 
 describe('FailureAnalysisService', () => {
   const prismaMock = { run: { findFirst: jest.fn() } };
-  const geminiMock = {
+  const groqMock = {
     isConfigured: jest.fn().mockReturnValue(true),
     generateJson: jest.fn(),
   };
 
   const service = new FailureAnalysisService(
     prismaMock as unknown as PrismaService,
-    geminiMock as unknown as GeminiClient,
+    groqMock as unknown as GroqClient,
   );
 
   beforeEach(() => {
     jest.clearAllMocks();
-    geminiMock.isConfigured.mockReturnValue(true);
+    groqMock.isConfigured.mockReturnValue(true);
     prismaMock.run.findFirst.mockResolvedValue(failedRun);
-    geminiMock.generateJson.mockResolvedValue(analysis);
+    groqMock.generateJson.mockResolvedValue(analysis);
   });
 
   it('answers 503 when no API key is configured', async () => {
-    geminiMock.isConfigured.mockReturnValue(false);
+    groqMock.isConfigured.mockReturnValue(false);
     await expect(service.analyzeRun(user, 'run-1')).rejects.toBeInstanceOf(
       ServiceUnavailableException,
     );
-    expect(geminiMock.generateJson).not.toHaveBeenCalled();
+    expect(groqMock.generateJson).not.toHaveBeenCalled();
   });
 
   it("answers 404 for another tenant's run", async () => {
@@ -91,7 +91,7 @@ describe('FailureAnalysisService', () => {
   it('answers 409 when the run did not fail', async () => {
     prismaMock.run.findFirst.mockResolvedValue({ ...failedRun, status: RunStatus.SUCCEEDED });
     await expect(service.analyzeRun(user, 'run-1')).rejects.toBeInstanceOf(ConflictException);
-    expect(geminiMock.generateJson).not.toHaveBeenCalled();
+    expect(groqMock.generateJson).not.toHaveBeenCalled();
   });
 
   it('returns the structured analysis on success', async () => {
@@ -101,16 +101,15 @@ describe('FailureAnalysisService', () => {
   it('sends the failed step error inside the prompt context', async () => {
     await service.analyzeRun(user, 'run-1');
 
-    const request = geminiMock.generateJson.mock.calls[0][0] as {
+    const request = groqMock.generateJson.mock.calls[0][0] as {
       prompt: string;
       systemInstruction: string;
-      responseSchema: unknown;
     };
     expect(request.prompt).toContain('HTTP request failed with status 404');
     expect(request.prompt).toContain('step "fetch"');
     expect(request.prompt).toContain('SKIPPED');
     expect(request.systemInstruction).toContain('FlowForge');
-    expect(request.responseSchema).toBeDefined();
+    expect(request.systemInstruction).toContain('JSON object');
   });
 
   it('truncates oversized error messages (token-limit guard)', async () => {
@@ -121,18 +120,18 @@ describe('FailureAnalysisService', () => {
 
     await service.analyzeRun(user, 'run-1');
 
-    const prompt = (geminiMock.generateJson.mock.calls[0][0] as { prompt: string }).prompt;
+    const prompt = (groqMock.generateJson.mock.calls[0][0] as { prompt: string }).prompt;
     expect(prompt).toContain('…[truncated]');
     expect(prompt.length).toBeLessThan(5000);
   });
 
   it('answers 502 when the model output fails schema validation', async () => {
-    geminiMock.generateJson.mockResolvedValue({ summary: 'missing other fields' });
+    groqMock.generateJson.mockResolvedValue({ summary: 'missing other fields' });
     await expect(service.analyzeRun(user, 'run-1')).rejects.toBeInstanceOf(BadGatewayException);
   });
 
-  it('maps Gemini API errors to 502', async () => {
-    geminiMock.generateJson.mockRejectedValue(new GeminiApiError(429, 'rate limited'));
+  it('maps Groq API errors to 502', async () => {
+    groqMock.generateJson.mockRejectedValue(new GroqApiError(429, 'rate limited'));
     await expect(service.analyzeRun(user, 'run-1')).rejects.toBeInstanceOf(BadGatewayException);
   });
 });

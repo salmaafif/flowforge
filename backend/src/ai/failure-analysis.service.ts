@@ -11,16 +11,17 @@ import { z } from 'zod';
 
 import { AuthenticatedUser } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
-import { GeminiApiError, GeminiClient, GeminiResponseSchema } from './gemini.client';
+import { GroqApiError, GroqClient } from './groq.client';
 
 /**
  * Contract for the analysis. Guarding against malformed LLM output is layered
  * (requirement G):
- *   1. Structured output — Gemini is constrained to `RESPONSE_SCHEMA` server-side
- *      (`responseMimeType: application/json` + `responseSchema`), so free-text
- *      answers cannot occur.
- *   2. The parsed JSON is re-validated against the Zod schema below; a blocked or
- *      malformed candidate fails here.
+ *   1. JSON mode — Groq's `response_format: { type: "json_object" }` guarantees
+ *      syntactically valid JSON, so free-text answers cannot occur.
+ *   2. The exact field shape is spelled out in the system instruction (Groq's
+ *      JSON mode does not enforce a schema server-side, unlike Gemini's
+ *      `responseSchema`), and the parsed JSON is re-validated against the Zod
+ *      schema below — a model that ignores the instruction fails here.
  *   3. Any validation/API failure maps to 502 instead of leaking raw text.
  */
 export const failureAnalysisSchema = z.object({
@@ -31,32 +32,6 @@ export const failureAnalysisSchema = z.object({
 });
 
 export type FailureAnalysis = z.infer<typeof failureAnalysisSchema>;
-
-/** Gemini structured-output schema mirroring failureAnalysisSchema. */
-const RESPONSE_SCHEMA: GeminiResponseSchema = {
-  type: 'object',
-  properties: {
-    summary: {
-      type: 'string',
-      description: 'One or two sentences: what went wrong, in plain language',
-    },
-    rootCause: {
-      type: 'string',
-      description: 'The most likely root cause, referencing step keys and error details',
-    },
-    suggestedFix: {
-      type: 'string',
-      description: 'Concrete, actionable steps the user should take to fix or mitigate',
-    },
-    confidence: {
-      type: 'string',
-      enum: ['low', 'medium', 'high'],
-      description: 'How confident the diagnosis is given the available context',
-    },
-  },
-  required: ['summary', 'rootCause', 'suggestedFix', 'confidence'],
-  propertyOrdering: ['summary', 'rootCause', 'suggestedFix', 'confidence'],
-};
 
 /**
  * Token-limit handling (requirement G): the run context is trimmed at the field
@@ -78,7 +53,8 @@ function clip(text: string, max: number): string {
 
 /**
  * Requirement G: intelligent failure analysis. Collects the failed run's context,
- * sends it to Gemini, and returns a structured diagnosis for the dashboard.
+ * sends it to Groq (Llama 3.3 70B), and returns a structured diagnosis for the
+ * dashboard.
  */
 @Injectable()
 export class FailureAnalysisService {
@@ -86,12 +62,12 @@ export class FailureAnalysisService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly gemini: GeminiClient,
+    private readonly groq: GroqClient,
   ) {}
 
   async analyzeRun(user: AuthenticatedUser, runId: string): Promise<FailureAnalysis> {
-    if (!this.gemini.isConfigured()) {
-      throw new ServiceUnavailableException('AI analysis is not configured (set GEMINI_API_KEY)');
+    if (!this.groq.isConfigured()) {
+      throw new ServiceUnavailableException('AI analysis is not configured (set GROQ_API_KEY)');
     }
 
     const run = await this.prisma.run.findFirst({
@@ -111,14 +87,13 @@ export class FailureAnalysisService {
 
     let raw: unknown;
     try {
-      raw = await this.gemini.generateJson({
+      raw = await this.groq.generateJson({
         systemInstruction: this.systemPrompt(),
         prompt: this.buildRunContext(run),
-        responseSchema: RESPONSE_SCHEMA,
       });
     } catch (error) {
-      if (error instanceof GeminiApiError) {
-        this.logger.error(`Gemini error for run ${runId}: ${error.status} ${error.message}`);
+      if (error instanceof GroqApiError) {
+        this.logger.error(`Groq error for run ${runId}: ${error.status} ${error.message}`);
         throw new BadGatewayException('AI analysis failed, please try again');
       }
       throw error;
@@ -126,7 +101,7 @@ export class FailureAnalysisService {
 
     const validated = failureAnalysisSchema.safeParse(raw);
     if (!validated.success) {
-      this.logger.warn(`Gemini output failed schema validation for run ${runId}`);
+      this.logger.warn(`Groq output failed schema validation for run ${runId}`);
       throw new BadGatewayException('AI returned an unusable analysis, try again');
     }
     return validated.data;
@@ -134,9 +109,9 @@ export class FailureAnalysisService {
 
   /**
    * Prompt-engineering approach (requirement G): a fixed system instruction pins
-   * the role and expectations; the volatile run context travels in the user turn
-   * as labelled sections, so the model attributes each fact (definition vs. runtime
-   * error) instead of guessing from an unstructured blob.
+   * the role, output contract, and expectations; the volatile run context travels
+   * in the user turn as labelled sections, so the model attributes each fact
+   * (definition vs. runtime error) instead of guessing from an unstructured blob.
    */
   private systemPrompt(): string {
     return [
@@ -147,6 +122,11 @@ export class FailureAnalysisService {
       'distinguish transient causes (network, rate limits) from permanent ones',
       '(wrong URL, bad expression, bug in script code), and suggest the smallest',
       'concrete fix. If retries were exhausted on a transient-looking error, say so.',
+      'Respond with ONLY a JSON object (no markdown, no prose outside it) with',
+      'exactly these string fields: "summary" (one or two sentences on what went',
+      'wrong), "rootCause" (the most likely root cause, referencing step keys and',
+      'error details), "suggestedFix" (concrete, actionable steps to fix or',
+      'mitigate), and "confidence" (one of "low", "medium", or "high").',
     ].join(' ');
   }
 
