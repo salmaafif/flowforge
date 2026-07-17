@@ -1,4 +1,5 @@
 import { useAuth } from '../auth/AuthContext';
+import { HealthPanel } from '../components/HealthPanel';
 import { WorkflowList } from '../components/WorkflowList';
 
 /** Dashboard shell: header + workflow list (live runs and health arrive next). */
@@ -30,6 +31,7 @@ export function DashboardPage() {
       </header>
 
       <main className="mx-auto max-w-6xl px-6 py-10">
+        <HealthPanel />
         <WorkflowList />
       </main>
     </div>

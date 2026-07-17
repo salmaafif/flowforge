@@ -2,18 +2,10 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 
 import { getRun } from '../api/runs';
-import type { RunStatus, RunStep, StepStatus } from '../api/types';
+import type { RunStep, StepStatus } from '../api/types';
 import { DagView } from '../components/DagView';
+import { RunStatusBadge } from '../components/RunStatusBadge';
 import { useRunLiveUpdates } from '../hooks/useRunLiveUpdates';
-
-const RUN_BADGE: Record<RunStatus, string> = {
-  PENDING: 'bg-slate-500/15 text-slate-300',
-  RUNNING: 'bg-sky-500/15 text-sky-300 animate-pulse',
-  SUCCEEDED: 'bg-emerald-500/15 text-emerald-300',
-  FAILED: 'bg-red-500/15 text-red-300',
-  CANCELLED: 'bg-amber-500/15 text-amber-300',
-  TIMED_OUT: 'bg-amber-500/15 text-amber-300',
-};
 
 const STEP_DOT: Record<StepStatus, string> = {
   PENDING: 'bg-slate-600',
@@ -42,11 +34,7 @@ export function RunPage() {
         <Link to="/" className="text-sm text-slate-400 transition hover:text-white">
           ← Back to workflows
         </Link>
-        {run && (
-          <span className={`rounded-full px-3 py-1 text-sm font-medium ${RUN_BADGE[run.status]}`}>
-            {run.status}
-          </span>
-        )}
+        {run && <RunStatusBadge status={run.status} />}
       </header>
 
       <main className="mx-auto max-w-3xl px-6 py-10">

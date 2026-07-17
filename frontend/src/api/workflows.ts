@@ -18,6 +18,10 @@ export function listWorkflows(params: ListWorkflowsParams): Promise<Paginated<Wo
   return api(`/workflows?${query.toString()}`);
 }
 
+export function getWorkflow(workflowId: string): Promise<WorkflowSummary> {
+  return api(`/workflows/${workflowId}`);
+}
+
 export function triggerWorkflow(workflowId: string): Promise<RunWithSteps> {
   return api(`/workflows/${workflowId}/trigger`, { method: 'POST', body: JSON.stringify({}) });
 }

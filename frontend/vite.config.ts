@@ -5,7 +5,7 @@ import { defineConfig } from 'vite';
 // Every backend route is proxied to the API in development, so the frontend can
 // use same-origin paths (no CORS) — including the SSE stream under /events.
 const BACKEND_URL = 'http://localhost:3000';
-const BACKEND_ROUTES = ['/auth', '/workflows', '/runs', '/hooks', '/events', '/health'];
+const BACKEND_ROUTES = ['/auth', '/workflows', '/runs', '/hooks', '/events', '/health', '/stats'];
 
 // https://vite.dev/config/
 export default defineConfig({

@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 import { listWorkflows, triggerWorkflow, updateWorkflow } from '../api/workflows';
 import type { Paginated, WorkflowSummary } from '../api/types';
@@ -123,29 +123,38 @@ export function WorkflowList() {
               )}
             </div>
 
-            {canEdit && (
-              <div className="flex shrink-0 items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    toggleMutation.mutate({ id: workflow.id, enabled: !workflow.enabled })
-                  }
-                  className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300
-                    transition hover:border-slate-500 hover:text-white"
-                >
-                  {workflow.enabled ? 'Disable' : 'Enable'}
-                </button>
-                <button
-                  type="button"
-                  disabled={!workflow.enabled || triggerMutation.isPending}
-                  onClick={() => triggerMutation.mutate(workflow.id)}
-                  className="rounded-lg bg-sky-500 px-4 py-1.5 text-sm font-medium text-white
-                    transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  ▶ Run
-                </button>
-              </div>
-            )}
+            <div className="flex shrink-0 items-center gap-2">
+              <Link
+                to={`/workflows/${workflow.id}/runs`}
+                className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300
+                  transition hover:border-slate-500 hover:text-white"
+              >
+                History
+              </Link>
+              {canEdit && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      toggleMutation.mutate({ id: workflow.id, enabled: !workflow.enabled })
+                    }
+                    className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300
+                      transition hover:border-slate-500 hover:text-white"
+                  >
+                    {workflow.enabled ? 'Disable' : 'Enable'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!workflow.enabled || triggerMutation.isPending}
+                    onClick={() => triggerMutation.mutate(workflow.id)}
+                    className="rounded-lg bg-sky-500 px-4 py-1.5 text-sm font-medium text-white
+                      transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    ▶ Run
+                  </button>
+                </>
+              )}
+            </div>
           </li>
         ))}
       </ul>

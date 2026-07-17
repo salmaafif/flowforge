@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { DashboardPage } from './pages/DashboardPage';
 import { LoginPage } from './pages/LoginPage';
+import { RunHistoryPage } from './pages/RunHistoryPage';
 import { RunPage } from './pages/RunPage';
 
 function App() {
@@ -23,6 +24,14 @@ function App() {
           element={
             <ProtectedRoute>
               <RunPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/workflows/:workflowId/runs"
+          element={
+            <ProtectedRoute>
+              <RunHistoryPage />
             </ProtectedRoute>
           }
         />
