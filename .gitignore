@@ -40,3 +40,4 @@ prisma/*.db-journal
 
 # Docker volumes (local)
 .pgdata/
+.claude/

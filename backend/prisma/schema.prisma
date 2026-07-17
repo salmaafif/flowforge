@@ -178,6 +178,10 @@ model Run {
   @@index([tenantId, status])
   // Supports the run-history view (most recent first) per workflow.
   @@index([workflowId, createdAt])
+  // Health panel: per-tenant 24h window aggregated by status. Column order is
+  // equality (tenantId) -> range (createdAt) -> group key (status), which lets
+  // the status breakdown run as an index-only scan over just the recent slice.
+  @@index([tenantId, createdAt, status])
   @@map("runs")
 }
 
