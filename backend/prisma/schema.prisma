@@ -211,8 +211,12 @@ model RunStep {
 // High-volume execution logs (append-only, kept separate from run records)
 // ---------------------------------------------------------------------------
 
+// Range-partitioned by month on `timestamp` (see the partition_execution_logs
+// migration). Postgres requires the partition key to be part of the primary key,
+// so the id is composite (id + timestamp) rather than id alone. Prisma still
+// treats this as an ordinary table for reads/writes.
 model ExecutionLog {
-  id        BigInt   @id @default(autoincrement())
+  id        BigInt   @default(autoincrement())
   tenantId  String   @db.Uuid
   runId     String   @db.Uuid
   runStepId String?  @db.Uuid
@@ -223,6 +227,7 @@ model ExecutionLog {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  @@id([id, timestamp])
   @@index([runId, timestamp])
   @@index([tenantId, timestamp])
   @@map("execution_logs")
