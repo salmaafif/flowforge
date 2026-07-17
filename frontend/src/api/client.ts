@@ -1,4 +1,4 @@
-import { loadAuth } from '../auth/storage';
+import { clearAuth, loadAuth } from '../auth/storage';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -27,6 +27,13 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   });
 
   if (!response.ok) {
+    // An expired/invalid session should bounce back to login instead of leaving
+    // the dashboard shell full of red errors. Login's own 401 (wrong credentials)
+    // is excluded so its inline error message still renders.
+    if (response.status === 401 && !path.startsWith('/auth/')) {
+      clearAuth();
+      window.location.assign('/login');
+    }
     throw new ApiError(response.status, await readErrorMessage(response));
   }
   if (response.status === 204) {
