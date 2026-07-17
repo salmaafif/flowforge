@@ -7,12 +7,12 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuthService } from './auth.service';
 
 describe('AuthService', () => {
-  const tenant = { id: 'tenant-1', slug: 'acme' };
+  const tenant = { id: 'tenant-1', slug: 'salma' };
   const passwordHash = bcrypt.hashSync('correct-password', 4);
   const user = {
     id: 'user-1',
     tenantId: tenant.id,
-    email: 'admin@acme.test',
+    email: 'admin@salma.test',
     passwordHash,
     role: Role.ADMIN,
   };
@@ -29,8 +29,8 @@ describe('AuthService', () => {
   );
 
   const credentials = {
-    tenantSlug: 'acme',
-    email: 'admin@acme.test',
+    tenantSlug: 'salma',
+    email: 'admin@salma.test',
     password: 'correct-password',
   };
 
@@ -47,13 +47,13 @@ describe('AuthService', () => {
     expect(result.user).toEqual({
       userId: 'user-1',
       tenantId: 'tenant-1',
-      email: 'admin@acme.test',
+      email: 'admin@salma.test',
       role: Role.ADMIN,
     });
     expect(jwtMock.signAsync).toHaveBeenCalledWith({
       sub: 'user-1',
       tenantId: 'tenant-1',
-      email: 'admin@acme.test',
+      email: 'admin@salma.test',
       role: Role.ADMIN,
     });
   });
@@ -77,7 +77,7 @@ describe('AuthService', () => {
   it('scopes the user lookup to the tenant', async () => {
     await service.login(credentials);
     expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
-      where: { tenantId_email: { tenantId: 'tenant-1', email: 'admin@acme.test' } },
+      where: { tenantId_email: { tenantId: 'tenant-1', email: 'admin@salma.test' } },
     });
   });
 });

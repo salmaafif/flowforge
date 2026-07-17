@@ -8,7 +8,7 @@ import { RolesGuard } from './roles.guard';
 const principal = (role: Role): AuthenticatedUser => ({
   userId: 'user-1',
   tenantId: 'tenant-1',
-  email: 'someone@acme.test',
+  email: 'someone@salma.test',
   role,
 });
 

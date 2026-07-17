@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref (e.g. rapid pushes to a PR branch).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  lint:
+    name: Lint & typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      # Prisma enums/types are imported across the backend, so the client must
+      # be generated before anything typechecks.
+      - run: npm run --workspace=@flowforge/backend prisma:generate
+      - name: Prettier (formatting)
+        run: npm run format:check
+      - name: oxlint (frontend)
+        run: npm run --workspace=@flowforge/frontend lint
+      - name: Typecheck backend
+        run: npm run --workspace=@flowforge/backend typecheck
+      - name: Typecheck frontend
+        run: npm run --workspace=@flowforge/frontend typecheck
+
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run --workspace=@flowforge/backend prisma:generate
+      - name: Backend tests (Jest)
+        run: npm run --workspace=@flowforge/backend test
+
+  build:
+    name: Build & artifacts
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run --workspace=@flowforge/backend prisma:generate
+      - name: Build backend
+        run: npm run --workspace=@flowforge/backend build
+      - name: Build frontend
+        run: npm run --workspace=@flowforge/frontend build
+      - name: Upload backend build
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-dist
+          path: backend/dist
+          if-no-files-found: error
+      - name: Upload frontend build
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          if-no-files-found: error
+
+  docker:
+    name: Docker image build
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # Validate that both production images build (no push). Layer caching via
+      # GitHub Actions cache keeps repeat runs fast.
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: false
+          tags: flowforge-backend:ci
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+      - name: Build frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: false
+          tags: flowforge-frontend:ci
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max

@@ -7,7 +7,7 @@ import { StatsService } from './stats.service';
 const user: AuthenticatedUser = {
   userId: 'user-1',
   tenantId: 'tenant-1',
-  email: 'viewer@acme.test',
+  email: 'viewer@salma.test',
   role: Role.VIEWER,
 };
 

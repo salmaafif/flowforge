@@ -9,7 +9,7 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 const payload: JwtPayload = {
   sub: 'user-1',
   tenantId: 'tenant-1',
-  email: 'admin@acme.test',
+  email: 'admin@salma.test',
   role: Role.ADMIN,
 };
 
@@ -72,7 +72,7 @@ describe('JwtAuthGuard', () => {
     expect(request.user).toEqual({
       userId: 'user-1',
       tenantId: 'tenant-1',
-      email: 'admin@acme.test',
+      email: 'admin@salma.test',
       role: Role.ADMIN,
     });
   });

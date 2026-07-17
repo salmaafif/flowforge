@@ -51,7 +51,7 @@ export function LoginPage() {
             <input
               id="tenantSlug"
               className={inputClass}
-              placeholder="acme"
+              placeholder="salma"
               value={tenantSlug}
               onChange={(event) => setTenantSlug(event.target.value)}
               required

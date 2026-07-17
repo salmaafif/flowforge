@@ -1,6 +1,16 @@
-# Local development stack for FlowForge.
-# Currently provides PostgreSQL; the API, frontend, and broker services are
-# added in the infrastructure step (E).
+# Full local stack for FlowForge: database, one-shot migrator, API, and web.
+#
+# There is no message broker: realtime is delivered over SSE straight from the
+# API process, and execution logs are stored in Postgres — so no Redis/queue is
+# needed (requirement E asks for a broker "if used"). See docs/infrastructure.md.
+#
+# Usage:
+#   docker compose up -d --build      # build images and start everything
+#   docker compose up -d db           # just Postgres, for local `npm run` dev
+#
+# The API is reachable directly on :3000, and the web app on :8080 (which also
+# reverse-proxies the API, so the SPA uses same-origin paths).
+
 services:
   db:
     image: postgres:16-alpine
@@ -20,6 +30,59 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # One-shot: apply migrations and seed demo data, then exit. The API waits for
+  # this to finish so it never starts against an un-migrated schema. Uses the
+  # `build` stage because it carries the Prisma CLI and ts-node (dev deps that
+  # the lean runtime image omits). Seeding is idempotent (safe to re-run).
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: build
+    image: flowforge-migrate:local
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://flowforge:flowforge@db:5432/flowforge?schema=public
+    command: >
+      sh -c "npm run --workspace=@flowforge/backend prisma:migrate:deploy &&
+             npm run --workspace=@flowforge/backend db:seed"
+    restart: 'no'
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: flowforge-backend:local
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql://flowforge:flowforge@db:5432/flowforge?schema=public
+      PORT: '3000'
+      JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-me}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1h}
+      # Optional: AI failure analysis is disabled (503) when unset.
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+    ports:
+      - '3000:3000'
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    image: flowforge-frontend:local
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - '8080:80'
 
 volumes:
   pgdata:

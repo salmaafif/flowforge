@@ -137,8 +137,8 @@ const NIGHTLY_REPORT_DEFINITION = {
   ],
 };
 
-/** Lives in the second tenant — invisible from acme, proving isolation. */
-const GLOBEX_SYNC_DEFINITION = {
+/** Lives in the second tenant — invisible from salma, proving isolation. */
+const TAVI_SYNC_DEFINITION = {
   timeoutMs: 30_000,
   steps: [
     { key: 'ping', name: 'Ping', type: 'DELAY', dependsOn: [], config: { delayMs: 1000 } },
@@ -307,63 +307,63 @@ async function seedRunHistory(
 async function main(): Promise<void> {
   const passwordHash = await bcrypt.hash('password123', 10);
 
-  // Tenant 1: acme — the main playground.
-  const acme = await seedTenant('Acme Inc', 'acme');
-  const acmeAdmin = await seedUser(acme.id, 'admin@acme.test', Role.ADMIN, passwordHash);
-  await seedUser(acme.id, 'editor@acme.test', Role.EDITOR, passwordHash);
-  await seedUser(acme.id, 'viewer@acme.test', Role.VIEWER, passwordHash);
+  // Tenant 1: salma — the main playground.
+  const salma = await seedTenant('Salma Corp', 'salma');
+  const salmaAdmin = await seedUser(salma.id, 'admin@salma.test', Role.ADMIN, passwordHash);
+  await seedUser(salma.id, 'editor@salma.test', Role.EDITOR, passwordHash);
+  await seedUser(salma.id, 'viewer@salma.test', Role.VIEWER, passwordHash);
 
-  // Tenant 2: globex — log in as admin@globex.test to see tenant isolation.
-  const globex = await seedTenant('Globex Corp', 'globex');
-  const globexAdmin = await seedUser(globex.id, 'admin@globex.test', Role.ADMIN, passwordHash);
+  // Tenant 2: tavi — log in as admin@tavi.test to see tenant isolation.
+  const tavi = await seedTenant('Tavi Corp', 'tavi');
+  const taviAdmin = await seedUser(tavi.id, 'admin@tavi.test', Role.ADMIN, passwordHash);
 
   const sampleEtl = await seedWorkflow({
-    tenantId: acme.id,
+    tenantId: salma.id,
     name: 'Sample ETL',
     description: 'Failure demo: the HTTP step gets a 404, retries 3x, then fails',
     definition: SAMPLE_ETL_DEFINITION,
-    createdById: acmeAdmin.id,
+    createdById: salmaAdmin.id,
   });
   const orders = await seedWorkflow({
-    tenantId: acme.id,
+    tenantId: salma.id,
     name: 'Order Processing',
     description: 'Always succeeds — watch the steps go green (~5s)',
     definition: ORDER_PROCESSING_DEFINITION,
-    createdById: acmeAdmin.id,
+    createdById: salmaAdmin.id,
   });
   const diamond = await seedWorkflow({
-    tenantId: acme.id,
+    tenantId: salma.id,
     name: 'Diamond Pipeline',
     description: 'Parallel branches + conditional gate that skips the merge',
     definition: DIAMOND_PIPELINE_DEFINITION,
-    createdById: acmeAdmin.id,
+    createdById: salmaAdmin.id,
   });
   const nightly = await seedWorkflow({
-    tenantId: acme.id,
+    tenantId: salma.id,
     name: 'Nightly Report',
     description: 'Cron-scheduled daily at 02:00',
     definition: NIGHTLY_REPORT_DEFINITION,
-    createdById: acmeAdmin.id,
+    createdById: salmaAdmin.id,
     cronExpression: '0 2 * * *',
   });
-  const globexSync = await seedWorkflow({
-    tenantId: globex.id,
-    name: 'Globex Sync',
-    description: 'Belongs to the globex tenant — invisible from acme',
-    definition: GLOBEX_SYNC_DEFINITION,
-    createdById: globexAdmin.id,
+  const taviSync = await seedWorkflow({
+    tenantId: tavi.id,
+    name: 'Tavi Sync',
+    description: 'Belongs to the tavi tenant — invisible from salma',
+    definition: TAVI_SYNC_DEFINITION,
+    createdById: taviAdmin.id,
   });
 
   const historyCounts = [
-    await seedRunHistory(orders, acme.id, 14),
-    await seedRunHistory(diamond, acme.id, 6),
-    await seedRunHistory(nightly, acme.id, 4),
-    await seedRunHistory(globexSync, globex.id, 5),
+    await seedRunHistory(orders, salma.id, 14),
+    await seedRunHistory(diamond, salma.id, 6),
+    await seedRunHistory(nightly, salma.id, 4),
+    await seedRunHistory(taviSync, tavi.id, 5),
   ];
   const insertedRuns = historyCounts.reduce((sum, value) => sum + value, 0);
 
   console.log(
-    `Seeded tenants "acme" (4 workflows) and "globex" (1 workflow); ` +
+    `Seeded tenants "salma" (4 workflows) and "tavi" (1 workflow); ` +
       `${insertedRuns} dummy runs inserted (existing histories left untouched). ` +
       `Sample ETL id: ${sampleEtl.workflow.id}`,
   );

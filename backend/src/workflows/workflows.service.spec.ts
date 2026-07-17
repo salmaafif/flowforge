@@ -12,7 +12,7 @@ const validator = new WorkflowDefinitionValidator();
 const user: AuthenticatedUser = {
   userId: 'user-1',
   tenantId: 'tenant-1',
-  email: 'editor@acme.test',
+  email: 'editor@salma.test',
   role: Role.EDITOR,
 };
 
