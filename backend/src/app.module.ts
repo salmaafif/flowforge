@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RunsModule } from './runs/runs.module';
+import { StatsModule } from './stats/stats.module';
 import { WorkflowsModule } from './workflows/workflows.module';
 
 /**
@@ -26,6 +27,7 @@ import { WorkflowsModule } from './workflows/workflows.module';
     HealthModule,
     WorkflowsModule,
     RunsModule,
+    StatsModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
