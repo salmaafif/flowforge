@@ -5,13 +5,13 @@ import '@xyflow/react/dist/style.css';
 
 import type { DefinitionStep, StepStatus } from '../api/types';
 
-const NODE_COLORS: Record<StepStatus, { border: string; background: string }> = {
-  PENDING: { border: '#475569', background: '#0f172a' },
-  RUNNING: { border: '#38bdf8', background: '#082f49' },
-  RETRYING: { border: '#a78bfa', background: '#2e1065' },
-  SUCCEEDED: { border: '#34d399', background: '#022c22' },
-  FAILED: { border: '#f87171', background: '#450a0a' },
-  SKIPPED: { border: '#fbbf24', background: '#451a03' },
+const NODE_COLORS: Record<StepStatus, { border: string; background: string; text: string }> = {
+  PENDING: { border: '#cbd5e1', background: '#ffffff', text: '#475569' },
+  RUNNING: { border: '#0ea5e9', background: '#f0f9ff', text: '#0369a1' },
+  RETRYING: { border: '#8b5cf6', background: '#f5f3ff', text: '#6d28d9' },
+  SUCCEEDED: { border: '#10b981', background: '#ecfdf5', text: '#047857' },
+  FAILED: { border: '#ef4444', background: '#fef2f2', text: '#b91c1c' },
+  SKIPPED: { border: '#f59e0b', background: '#fffbeb', text: '#b45309' },
 };
 
 const LEVEL_GAP_X = 240;
@@ -79,9 +79,10 @@ export function DagView({ steps, statusByKey }: DagViewProps) {
         style: {
           border: `2px solid ${colors.border}`,
           background: colors.background,
-          color: '#e2e8f0',
+          color: colors.text,
           borderRadius: 10,
           fontSize: 12,
+          fontWeight: 500,
           padding: 8,
           width: 170,
         },
@@ -94,7 +95,7 @@ export function DagView({ steps, statusByKey }: DagViewProps) {
         source: dep,
         target: step.key,
         animated: (statusByKey[step.key] ?? 'PENDING') === 'RUNNING',
-        style: { stroke: '#475569' },
+        style: { stroke: '#cbd5e1' },
       })),
     );
 
@@ -102,7 +103,7 @@ export function DagView({ steps, statusByKey }: DagViewProps) {
   }, [steps, statusByKey]);
 
   return (
-    <div className="h-72 rounded-xl border border-slate-800 bg-slate-900/30">
+    <div className="h-72 rounded-xl border border-slate-200 bg-slate-50 shadow-sm">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -112,7 +113,7 @@ export function DagView({ steps, statusByKey }: DagViewProps) {
         elementsSelectable={false}
         proOptions={{ hideAttribution: true }}
       >
-        <Background color="#1e293b" gap={20} />
+        <Background color="#e2e8f0" gap={20} />
       </ReactFlow>
     </div>
   );

@@ -68,28 +68,43 @@ export function WorkflowList() {
   return (
     <section>
       <div className="mb-4 flex items-center justify-between gap-4">
-        <h2 className="text-lg font-semibold">Workflows</h2>
-        <input
-          value={search}
-          onChange={(event) => {
-            setSearch(event.target.value);
-            setPage(1);
-          }}
-          placeholder="Search workflows…"
-          className="w-64 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm
-            text-slate-100 placeholder-slate-500 outline-none focus:border-sky-500"
-        />
+        <h2 className="text-base font-semibold text-slate-900">Workflows</h2>
+        <div className="relative w-72">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+            <SearchIcon />
+          </span>
+          <input
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setPage(1);
+            }}
+            placeholder="Search workflows…"
+            className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm
+              text-slate-900 placeholder-slate-400 outline-none transition focus:border-indigo-500
+              focus:ring-2 focus:ring-indigo-100"
+          />
+        </div>
       </div>
 
-      {workflowsQuery.isPending && <p className="text-slate-400">Loading workflows…</p>}
+      {workflowsQuery.isPending && (
+        <div className="space-y-3">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="h-[70px] animate-pulse rounded-xl border border-slate-200 bg-white"
+            />
+          ))}
+        </div>
+      )}
       {workflowsQuery.isError && (
-        <p role="alert" className="text-red-400">
+        <p role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">
           Failed to load workflows: {String(workflowsQuery.error)}
         </p>
       )}
 
       {workflowsQuery.isSuccess && workflows.length === 0 && (
-        <p className="rounded-lg border border-dashed border-slate-800 p-6 text-center text-slate-500">
+        <p className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
           No workflows found.
         </p>
       )}
@@ -98,22 +113,22 @@ export function WorkflowList() {
         {workflows.map((workflow) => (
           <li
             key={workflow.id}
-            className="flex items-center justify-between gap-4 rounded-xl border border-slate-800
-              bg-slate-900/50 px-5 py-4"
+            className="flex items-center justify-between gap-4 rounded-xl border border-slate-200
+              bg-white px-5 py-4 shadow-sm transition hover:border-slate-300 hover:shadow"
           >
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="truncate font-medium text-slate-100">{workflow.name}</span>
-                <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="truncate font-medium text-slate-900">{workflow.name}</span>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
                   v{workflow.versions[0]?.version ?? '—'}
                 </span>
                 {workflow.cronExpression && (
-                  <span className="rounded-full bg-indigo-500/15 px-2 py-0.5 text-xs text-indigo-300">
+                  <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-600">
                     ⏱ {workflow.cronExpression}
                   </span>
                 )}
                 {!workflow.enabled && (
-                  <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-300">
+                  <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
                     disabled
                   </span>
                 )}
@@ -126,8 +141,8 @@ export function WorkflowList() {
             <div className="flex shrink-0 items-center gap-2">
               <Link
                 to={`/workflows/${workflow.id}/runs`}
-                className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300
-                  transition hover:border-slate-500 hover:text-white"
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600
+                  transition hover:bg-slate-50 hover:text-slate-900"
               >
                 History
               </Link>
@@ -138,8 +153,8 @@ export function WorkflowList() {
                     onClick={() =>
                       toggleMutation.mutate({ id: workflow.id, enabled: !workflow.enabled })
                     }
-                    className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300
-                      transition hover:border-slate-500 hover:text-white"
+                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600
+                      transition hover:bg-slate-50 hover:text-slate-900"
                   >
                     {workflow.enabled ? 'Disable' : 'Enable'}
                   </button>
@@ -147,10 +162,12 @@ export function WorkflowList() {
                     type="button"
                     disabled={!workflow.enabled || triggerMutation.isPending}
                     onClick={() => triggerMutation.mutate(workflow.id)}
-                    className="rounded-lg bg-sky-500 px-4 py-1.5 text-sm font-medium text-white
-                      transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-1.5 text-sm
+                      font-medium text-white shadow-sm transition hover:bg-indigo-500
+                      disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    ▶ Run
+                    <PlayIcon />
+                    Run
                   </button>
                 </>
               )}
@@ -160,12 +177,12 @@ export function WorkflowList() {
       </ul>
 
       {meta && meta.totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-end gap-3 text-sm text-slate-400">
+        <div className="mt-5 flex items-center justify-end gap-3 text-sm text-slate-500">
           <button
             type="button"
             disabled={page <= 1}
             onClick={() => setPage((current) => current - 1)}
-            className="rounded-lg border border-slate-700 px-3 py-1 disabled:opacity-40"
+            className="rounded-lg border border-slate-300 px-3 py-1 transition hover:bg-slate-50 disabled:opacity-40"
           >
             ← Prev
           </button>
@@ -176,12 +193,29 @@ export function WorkflowList() {
             type="button"
             disabled={page >= meta.totalPages}
             onClick={() => setPage((current) => current + 1)}
-            className="rounded-lg border border-slate-700 px-3 py-1 disabled:opacity-40"
+            className="rounded-lg border border-slate-300 px-3 py-1 transition hover:bg-slate-50 disabled:opacity-40"
           >
             Next →
           </button>
         </div>
       )}
     </section>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+      <path d="m20 20-3-3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function PlayIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M8 5v14l11-7z" />
+    </svg>
   );
 }
