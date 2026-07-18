@@ -114,8 +114,6 @@ export function LoginPage() {
             {submitting ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
-
-       
       </div>
     </main>
   );

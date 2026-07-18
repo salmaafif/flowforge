@@ -168,7 +168,11 @@ function EditWorkflow({ workflowId }: { workflowId: string }) {
       }}
       versions={versionsQuery.data}
       onRollback={async (versionToRollback) => {
-        if (confirm(`Are you sure you want to rollback to version ${versionToRollback}? This will create a new version with the old definition.`)) {
+        if (
+          confirm(
+            `Are you sure you want to rollback to version ${versionToRollback}? This will create a new version with the old definition.`,
+          )
+        ) {
           await rollbackWorkflowVersion(workflowId, versionToRollback);
           await queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
           await queryClient.invalidateQueries({ queryKey: ['workflow-versions', workflowId] });
@@ -410,7 +414,9 @@ function EditorForm({
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="px-4 py-2.5 text-left font-semibold text-slate-900">Version</th>
-                    <th className="px-4 py-2.5 text-left font-semibold text-slate-900">Created At</th>
+                    <th className="px-4 py-2.5 text-left font-semibold text-slate-900">
+                      Created At
+                    </th>
                     <th className="px-4 py-2.5 text-right font-semibold text-slate-900">Action</th>
                   </tr>
                 </thead>
@@ -418,7 +424,12 @@ function EditorForm({
                   {versions.map((ver, idx) => (
                     <tr key={ver.id} className="hover:bg-slate-50/60 transition-colors">
                       <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">
-                        v{ver.version} {idx === 0 && <span className="ml-2 rounded-full bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700 ring-1 ring-inset ring-indigo-200">Current</span>}
+                        v{ver.version}{' '}
+                        {idx === 0 && (
+                          <span className="ml-2 rounded-full bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700 ring-1 ring-inset ring-indigo-200">
+                            Current
+                          </span>
+                        )}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-slate-500">
                         {new Date(ver.createdAt).toLocaleString()}

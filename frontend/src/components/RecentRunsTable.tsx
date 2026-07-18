@@ -17,27 +17,27 @@ function formatTrigger(trigger: string): string {
 
 const STATUS_STYLES: Record<string, string> = {
   SUCCEEDED: 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200',
-  RUNNING:   'bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-200 animate-pulse',
-  PENDING:   'bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200',
-  FAILED:    'bg-red-50 text-red-700 ring-1 ring-inset ring-red-200',
+  RUNNING: 'bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-200 animate-pulse',
+  PENDING: 'bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200',
+  FAILED: 'bg-red-50 text-red-700 ring-1 ring-inset ring-red-200',
   CANCELLED: 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200',
   TIMED_OUT: 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200',
 };
 
 const STATUS_DOT: Record<string, string> = {
   SUCCEEDED: 'bg-emerald-500',
-  RUNNING:   'bg-sky-500',
-  PENDING:   'bg-slate-400',
-  FAILED:    'bg-red-500',
+  RUNNING: 'bg-sky-500',
+  PENDING: 'bg-slate-400',
+  FAILED: 'bg-red-500',
   CANCELLED: 'bg-amber-500',
   TIMED_OUT: 'bg-amber-500',
 };
 
 const STATUS_LABELS: Record<string, string> = {
   SUCCEEDED: 'Completed',
-  RUNNING:   'Running',
-  PENDING:   'Pending',
-  FAILED:    'Failed',
+  RUNNING: 'Running',
+  PENDING: 'Pending',
+  FAILED: 'Failed',
   CANCELLED: 'Cancelled',
   TIMED_OUT: 'Timed Out',
 };
@@ -127,10 +127,7 @@ export function RecentRunsTable() {
             </thead>
             <tbody className="divide-y divide-slate-50">
               {runs.map((run) => (
-                <tr
-                  key={run.id}
-                  className="transition-colors hover:bg-slate-50/60"
-                >
+                <tr key={run.id} className="transition-colors hover:bg-slate-50/60">
                   <td className="whitespace-nowrap px-6 py-3.5">
                     <Link
                       to={`/runs/${run.id}`}

@@ -157,7 +157,17 @@ function GridIcon() {
 
 function WorkflowsIcon() {
   return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
       <circle cx="12" cy="5" r="2.5" />
       <circle cx="6" cy="19" r="2.5" />
       <circle cx="18" cy="19" r="2.5" />
@@ -165,4 +175,3 @@ function WorkflowsIcon() {
     </svg>
   );
 }
-
