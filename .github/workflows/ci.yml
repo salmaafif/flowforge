@@ -15,6 +15,37 @@ env:
   NODE_VERSION: '22'
 
 jobs:
+  # Detect which part of the monorepo changed so the heavy jobs (tests, builds,
+  # image builds) only run for the affected stack. Shared/root files (lockfile,
+  # base tsconfig, this workflow) count as changes to BOTH stacks, so anything
+  # cross-cutting still rebuilds everything.
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'tsconfig.base.json'
+              - '.github/workflows/ci.yml'
+            frontend:
+              - 'frontend/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'tsconfig.base.json'
+              - '.github/workflows/ci.yml'
+
+  # Always runs: whole-repo formatting plus both typechecks are cheap and guard
+  # cross-stack consistency (and doc/config-only changes still get linted).
   lint:
     name: Lint & typecheck
     runs-on: ubuntu-latest
@@ -40,6 +71,8 @@ jobs:
   test:
     name: Unit tests
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -54,6 +87,8 @@ jobs:
   e2e:
     name: Integration & E2E tests
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     # A throwaway Postgres for the API/full-run tests; the suite creates its own
     # `flowforge_test` database inside it and applies migrations before running.
     services:
@@ -84,10 +119,11 @@ jobs:
       - name: Integration & E2E tests (Jest + Postgres)
         run: npm run --workspace=@flowforge/backend test:e2e
 
-  build:
-    name: Build & artifacts
+  build-backend:
+    name: Build backend
     runs-on: ubuntu-latest
-    needs: [lint, test, e2e]
+    needs: [changes, lint, test, e2e]
+    if: needs.changes.outputs.backend == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -98,14 +134,27 @@ jobs:
       - run: npm run --workspace=@flowforge/backend prisma:generate
       - name: Build backend
         run: npm run --workspace=@flowforge/backend build
-      - name: Build frontend
-        run: npm run --workspace=@flowforge/frontend build
       - name: Upload backend build
         uses: actions/upload-artifact@v4
         with:
           name: backend-dist
           path: backend/dist
           if-no-files-found: error
+
+  build-frontend:
+    name: Build frontend
+    runs-on: ubuntu-latest
+    needs: [changes, lint]
+    if: needs.changes.outputs.frontend == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Build frontend
+        run: npm run --workspace=@flowforge/frontend build
       - name: Upload frontend build
         uses: actions/upload-artifact@v4
         with:
@@ -113,15 +162,16 @@ jobs:
           path: frontend/dist
           if-no-files-found: error
 
-  docker:
-    name: Docker image build
+  docker-backend:
+    name: Docker image (backend)
     runs-on: ubuntu-latest
-    needs: build
+    needs: [changes, build-backend]
+    if: needs.changes.outputs.backend == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      # Validate that both production images build (no push). Layer caching via
-      # GitHub Actions cache keeps repeat runs fast.
+      # Validate the production image builds (no push). GHA layer cache keeps
+      # repeat runs fast.
       - name: Build backend image
         uses: docker/build-push-action@v6
         with:
@@ -131,6 +181,15 @@ jobs:
           tags: flowforge-backend:ci
           cache-from: type=gha,scope=backend
           cache-to: type=gha,scope=backend,mode=max
+
+  docker-frontend:
+    name: Docker image (frontend)
+    runs-on: ubuntu-latest
+    needs: [changes, build-frontend]
+    if: needs.changes.outputs.frontend == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
       - name: Build frontend image
         uses: docker/build-push-action@v6
         with:
