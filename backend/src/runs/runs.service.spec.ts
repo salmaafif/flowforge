@@ -4,6 +4,7 @@ import { Role, RunStatus, StepStatus } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/auth.types';
 import { WorkflowDefinitionValidator } from '../engine/dag/workflow-definition.validator';
 import { WorkflowEngine, WorkflowRunResult } from '../engine/workflow-engine';
+import { ExecutionLogService } from '../logging/execution-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RunEventsService } from '../realtime/run-events.service';
 import { RunsService } from './runs.service';
@@ -70,12 +71,14 @@ describe('RunsService', () => {
   };
   const engineMock = { execute: jest.fn() };
   const runEventsMock = { emit: jest.fn() };
+  const executionLogsMock = { writeMany: jest.fn().mockResolvedValue(undefined) };
 
   const service = new RunsService(
     prismaMock as unknown as PrismaService,
     engineMock as unknown as WorkflowEngine,
     validator,
     runEventsMock as unknown as RunEventsService,
+    executionLogsMock as unknown as ExecutionLogService,
   );
 
   beforeEach(() => {
