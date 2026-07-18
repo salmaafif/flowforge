@@ -75,6 +75,17 @@ export interface RunDetail extends RunWithSteps {
   workflowVersion: { version: number; definition: { steps: DefinitionStep[] } };
 }
 
+export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
+
+/** A single execution-log row (mirrors ExecutionLogView on the backend). */
+export interface ExecutionLog {
+  level: LogLevel;
+  message: string;
+  timestamp: string;
+  runStepId: string | null;
+  context: unknown;
+}
+
 /** Mirrors backend/src/realtime/run-events.ts — one flat shape for every event. */
 export interface RunEvent {
   type:

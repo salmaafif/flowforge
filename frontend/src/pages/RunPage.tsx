@@ -1,14 +1,23 @@
 import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
-import { getRun } from '../api/runs';
-import type { RunStatus, RunStep, StepStatus } from '../api/types';
+import { getRun, getRunLogs } from '../api/runs';
+import type { ExecutionLog, LogLevel, RunStatus, RunStep, StepStatus } from '../api/types';
 import { AnalysisPanel } from '../components/AnalysisPanel';
 import { DagView } from '../components/DagView';
 import { RunStatusBadge } from '../components/RunStatusBadge';
 import { useRunLiveUpdates } from '../hooks/useRunLiveUpdates';
 
 const ANALYZABLE: RunStatus[] = ['FAILED', 'TIMED_OUT'];
+const TERMINAL: RunStatus[] = ['SUCCEEDED', 'FAILED', 'CANCELLED', 'TIMED_OUT'];
+
+const LOG_LEVEL_STYLE: Record<LogLevel, string> = {
+  DEBUG: 'text-slate-500',
+  INFO: 'text-sky-300',
+  WARN: 'text-amber-300',
+  ERROR: 'text-red-400',
+};
 
 const STEP_DOT: Record<StepStatus, string> = {
   PENDING: 'bg-slate-600',
@@ -30,6 +39,22 @@ export function RunPage() {
   useRunLiveUpdates(runId);
 
   const run = runQuery.data;
+
+  const logsQuery = useQuery({
+    queryKey: ['run-logs', runId],
+    queryFn: () => getRunLogs(runId as string),
+    enabled: Boolean(runId),
+  });
+  const { refetch: refetchLogs } = logsQuery;
+
+  // Logs are flushed when the run finishes, so refetch once it reaches a
+  // terminal status (the live-updates hook has already refreshed the run).
+  const runStatus = run?.status;
+  useEffect(() => {
+    if (runStatus && TERMINAL.includes(runStatus)) {
+      void refetchLogs();
+    }
+  }, [runStatus, refetchLogs]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -80,10 +105,45 @@ export function RunPage() {
                 <StepRow key={step.id} step={step} />
               ))}
             </ol>
+
+            <LogsPanel logs={logsQuery.data?.data ?? []} steps={run.steps} />
           </>
         )}
       </main>
     </div>
+  );
+}
+
+function LogsPanel({ logs, steps }: { logs: ExecutionLog[]; steps: RunStep[] }) {
+  const stepKeyById = new Map(steps.map((step) => [step.id, step.stepKey]));
+
+  return (
+    <section className="mt-8">
+      <h2 className="mb-3 text-sm font-semibold text-slate-300">Execution logs</h2>
+      {logs.length === 0 ? (
+        <p className="text-xs text-slate-500">No logs yet — they appear once the run finishes.</p>
+      ) : (
+        <ol className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950 font-mono text-xs">
+          {logs.map((log, index) => (
+            <li
+              key={index}
+              className="flex gap-3 border-b border-slate-900 px-4 py-1.5 last:border-b-0"
+            >
+              <span className="shrink-0 text-slate-600">
+                {new Date(log.timestamp).toLocaleTimeString()}
+              </span>
+              <span className={`w-12 shrink-0 font-semibold ${LOG_LEVEL_STYLE[log.level]}`}>
+                {log.level}
+              </span>
+              {log.runStepId && stepKeyById.has(log.runStepId) && (
+                <span className="shrink-0 text-slate-500">[{stepKeyById.get(log.runStepId)}]</span>
+              )}
+              <span className="text-slate-300">{log.message}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
   );
 }
 

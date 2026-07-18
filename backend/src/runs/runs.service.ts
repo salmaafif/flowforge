@@ -5,7 +5,15 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { Prisma, Run, RunStatus, StepStatus, StepType, TriggerType } from '@prisma/client';
+import {
+  LogLevel,
+  Prisma,
+  Run,
+  RunStatus,
+  StepStatus,
+  StepType,
+  TriggerType,
+} from '@prisma/client';
 
 import { AuthenticatedUser } from '../auth/auth.types';
 import { Paginated, PaginationQuery, paginate, toSkipTake } from '../common/pagination';
@@ -19,11 +27,17 @@ import {
   WorkflowRunResult,
   WorkflowRunStatus,
 } from '../engine/workflow-engine';
+import { ExecutionLogInput, ExecutionLogService } from '../logging/execution-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RunEventsService } from '../realtime/run-events.service';
 import { TriggerRunDto } from './dto/trigger-run.dto';
 
 export type RunWithSteps = Prisma.RunGetPayload<{ include: { steps: true } }>;
+
+/** A single execution-log row as returned to the dashboard (no BigInt id). */
+export type ExecutionLogView = Prisma.ExecutionLogGetPayload<{
+  select: { level: true; message: true; timestamp: true; runStepId: true; context: true };
+}>;
 
 /** Run detail incl. the executed definition, so the UI can draw the DAG. */
 export type RunDetail = Prisma.RunGetPayload<{
@@ -49,6 +63,11 @@ const STEP_STATUS_MAP: Record<StepOutcome, StepStatus> = {
   ABORTED: StepStatus.FAILED,
 };
 
+/** Bounds a string so a pathological error never bloats a log row. */
+function clip(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max)}…`;
+}
+
 /**
  * Bridges the pure WorkflowEngine and the database.
  *
@@ -66,6 +85,7 @@ export class RunsService {
     private readonly engine: WorkflowEngine,
     private readonly definitionValidator: WorkflowDefinitionValidator,
     private readonly runEvents: RunEventsService,
+    private readonly executionLogs: ExecutionLogService,
   ) {}
 
   async trigger(
@@ -210,6 +230,7 @@ export class RunsService {
       workflowId: params.workflowId,
       definition: params.definition,
       input: params.input,
+      stepIdByKey: new Map(run.steps.map((step) => [step.stepKey, step.id])),
     });
 
     return run;
@@ -240,6 +261,37 @@ export class RunsService {
     return paginate(data, total, query.page, query.pageSize);
   }
 
+  /**
+   * Paginated per-run execution logs for the dashboard. `id` (a BigInt) is
+   * deliberately not selected — it can't be JSON-serialised and the client keys
+   * on runStepId + timestamp instead.
+   */
+  async listLogs(
+    user: AuthenticatedUser,
+    runId: string,
+    query: PaginationQuery,
+  ): Promise<Paginated<ExecutionLogView>> {
+    const run = await this.prisma.run.findFirst({
+      where: { id: runId, tenantId: user.tenantId },
+      select: { id: true },
+    });
+    if (!run) {
+      throw new NotFoundException('Run not found');
+    }
+
+    const where: Prisma.ExecutionLogWhereInput = { runId, tenantId: user.tenantId };
+    const [total, data] = await this.prisma.$transaction([
+      this.prisma.executionLog.count({ where }),
+      this.prisma.executionLog.findMany({
+        where,
+        orderBy: { timestamp: 'asc' },
+        ...toSkipTake(query),
+        select: { level: true, message: true, timestamp: true, runStepId: true, context: true },
+      }),
+    ]);
+    return paginate(data, total, query.page, query.pageSize);
+  }
+
   async findOne(user: AuthenticatedUser, runId: string): Promise<RunDetail> {
     const run = await this.prisma.run.findFirst({
       where: { id: runId, tenantId: user.tenantId },
@@ -261,16 +313,34 @@ export class RunsService {
     workflowId: string;
     definition: WorkflowDefinition;
     input: unknown;
+    stepIdByKey: Map<string, string>;
   }): Promise<void> {
     const { runId, tenantId, workflowId, definition, input } = context;
+
+    // Buffer log entries during execution (no DB in the hot path) and flush them
+    // in one write afterwards. Timestamps are captured per event to keep order.
+    const logs: ExecutionLogInput[] = [
+      { tenantId, runId, level: LogLevel.INFO, message: 'Run started', timestamp: new Date() },
+    ];
+
     try {
       const result = await this.engine.execute(definition, {
         input,
         listener: {
-          onStepEvent: (event) => this.publishStepEvent(context, event),
+          onStepEvent: (event) => {
+            this.publishStepEvent(context, event);
+            logs.push(this.stepEventToLog(context, event));
+          },
         },
       });
       await this.persistResult(runId, result);
+      logs.push({
+        tenantId,
+        runId,
+        level: result.status === 'SUCCEEDED' ? LogLevel.INFO : LogLevel.ERROR,
+        message: `Run finished: ${result.status}`,
+        timestamp: new Date(),
+      });
       this.runEvents.emit({
         type: 'run-finished',
         tenantId,
@@ -280,6 +350,13 @@ export class RunsService {
       });
     } catch (error) {
       this.logger.error(`Run ${runId} crashed: ${String(error)}`);
+      logs.push({
+        tenantId,
+        runId,
+        level: LogLevel.ERROR,
+        message: `Run crashed: ${clip(String(error), 1_000)}`,
+        timestamp: new Date(),
+      });
       this.runEvents.emit({
         type: 'run-finished',
         tenantId,
@@ -295,6 +372,55 @@ export class RunsService {
         .catch((persistError) =>
           this.logger.error(`Failed to mark run ${runId} as failed: ${String(persistError)}`),
         );
+    } finally {
+      // Best-effort: a logging failure never affects the run outcome.
+      await this.executionLogs.writeMany(logs);
+    }
+  }
+
+  /** Maps an engine step event to an execution-log row (severity + message + context). */
+  private stepEventToLog(
+    context: { runId: string; tenantId: string; stepIdByKey: Map<string, string> },
+    event: StepEvent,
+  ): ExecutionLogInput {
+    const base = {
+      tenantId: context.tenantId,
+      runId: context.runId,
+      runStepId: context.stepIdByKey.get(event.key) ?? null,
+      timestamp: new Date(),
+    };
+
+    switch (event.type) {
+      case 'step-started':
+        return { ...base, level: LogLevel.INFO, message: `Step "${event.key}" started` };
+      case 'step-succeeded':
+        return { ...base, level: LogLevel.INFO, message: `Step "${event.key}" succeeded` };
+      case 'step-failed':
+        return {
+          ...base,
+          level: LogLevel.ERROR,
+          message: `Step "${event.key}" failed`,
+          context: { error: clip(event.error, 1_000) },
+        };
+      case 'step-retrying':
+        return {
+          ...base,
+          level: LogLevel.WARN,
+          message: `Step "${event.key}" retrying (attempt ${event.attempt}, in ${event.delayMs}ms)`,
+          context: { attempt: event.attempt, delayMs: event.delayMs },
+        };
+      case 'step-skipped':
+        return {
+          ...base,
+          level: LogLevel.INFO,
+          message: `Step "${event.key}" skipped (dependency not satisfied)`,
+        };
+      case 'step-aborted':
+        return {
+          ...base,
+          level: LogLevel.WARN,
+          message: `Step "${event.key}" aborted (timeout or cancellation)`,
+        };
     }
   }
 

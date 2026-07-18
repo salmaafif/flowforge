@@ -55,6 +55,22 @@ describe('Run execution (e2e)', () => {
   const stepStatuses = (run: Record<string, any>): Record<string, string> =>
     Object.fromEntries(run.steps.map((s: any) => [s.stepKey, s.status]));
 
+  // Logs are flushed to the partitioned store just after the run reaches a
+  // terminal status, so give the write a moment to land.
+  const pollExecutionLogs = async (runId: string, timeoutMs = 5_000): Promise<any[]> => {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const logs = await prisma.executionLog.findMany({
+        where: { runId },
+        orderBy: { timestamp: 'asc' },
+      });
+      if (logs.length > 0 || Date.now() > deadline) {
+        return logs;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  };
+
   it('runs parallel branches and prunes a false conditional branch → SUCCEEDED', async () => {
     const token = tokenFor(app, a.editor);
 
@@ -139,6 +155,24 @@ describe('Run execution (e2e)', () => {
 
     const merge = run.steps.find((s: any) => s.stepKey === 'merge');
     expect(merge.output).toBe(3);
+
+    // Per-step execution logs were written to the partitioned store, linked to
+    // their run steps.
+    const logs = await pollExecutionLogs(run.id);
+    const messages = logs.map((l) => l.message);
+    expect(messages).toContain('Run started');
+    expect(messages).toContain('Step "seedA" started');
+    expect(messages).toContain('Step "afterFalse" skipped (dependency not satisfied)');
+    expect(messages).toContain('Run finished: SUCCEEDED');
+    expect(logs.some((l) => l.runStepId !== null)).toBe(true);
+
+    // The same logs are exposed via the paginated API endpoint.
+    const logsRes = await request(server())
+      .get(`/runs/${run.id}/logs?pageSize=100`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(logsRes.body.meta.total).toBe(logs.length);
+    expect(logsRes.body.data.map((l: any) => l.message)).toContain('Run started');
   });
 
   it('retries a failing step then FAILS the run and skips downstream', async () => {
@@ -180,5 +214,11 @@ describe('Run execution (e2e)', () => {
     expect(boom.attempts).toBe(3); // 1 initial + 2 retries
     expect(boom.error).toContain('boom');
     expect(stepStatuses(run).after).toBe('SKIPPED');
+
+    // Logs capture the retry warnings and the failure at ERROR level.
+    const logs = await pollExecutionLogs(run.id);
+    expect(logs.some((l) => l.level === 'WARN' && l.message.includes('retrying'))).toBe(true);
+    expect(logs.some((l) => l.level === 'ERROR' && l.message.includes('"boom" failed'))).toBe(true);
+    expect(logs.map((l) => l.message)).toContain('Run finished: FAILED');
   });
 });

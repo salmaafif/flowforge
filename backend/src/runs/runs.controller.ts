@@ -17,7 +17,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { Paginated, PaginationQuery, paginationQuerySchema } from '../common/pagination';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { TriggerRunDto, triggerRunSchema } from './dto/trigger-run.dto';
-import { RunDetail, RunWithSteps, RunsService } from './runs.service';
+import { ExecutionLogView, RunDetail, RunWithSteps, RunsService } from './runs.service';
 
 /**
  * Run endpoints: manual triggering plus run history reads. Triggering answers
@@ -53,5 +53,14 @@ export class RunsController {
     @Param('id', ParseUUIDPipe) runId: string,
   ): Promise<RunDetail> {
     return this.runsService.findOne(user, runId);
+  }
+
+  @Get('runs/:id/logs')
+  listLogs(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) runId: string,
+    @Query(new ZodValidationPipe(paginationQuerySchema)) query: PaginationQuery,
+  ): Promise<Paginated<ExecutionLogView>> {
+    return this.runsService.listLogs(user, runId, query);
   }
 }
