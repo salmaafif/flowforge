@@ -29,7 +29,7 @@ blend of Zapier's workflow model and GitHub Actions' execution model.
 | **Multi-tenant API** | Strict per-tenant isolation on every entity and query. Workflow CRUD + append-only **version history** with **rollback**. Manual / **cron** / **webhook** triggers. Pagination, filtering, and rate limiting on list endpoints. |
 | **AuthN/Z** | JWT auth; **RBAC** with Admin / Editor / Viewer. All input validated & sanitized with **Zod**. |
 | **Real-time dashboard** | React SPA: live run/step status over **SSE**, visual **DAG rendering** (React Flow), run history, and a global **health panel** (active runs, success/failure rate, avg exec time over 24h). Client caching + optimistic updates via TanStack Query. |
-| **AI failure analysis** | On a failed run, an LLM (**Groq**, Llama 3.3 70B) produces a structured root-cause analysis with guarded, validated JSON output. Degrades gracefully to `503` when unconfigured. |
+| **AI features** | Two LLM features (**Groq**, Llama 3.3 70B): **failure analysis** (structured root-cause diagnosis of a failed run) and a **natural-language workflow builder** (describe a workflow in English → valid DAG). Both use JSON mode + Zod re-validation and degrade to `503` when unconfigured. |
 | **Data layer** | Relational schema (tenants, users, workflows + versions, runs + steps). High-volume execution logs live in a **time-partitioned** append-only table. A composite index accelerates the health panel (**~69× faster**, measured). |
 | **Infra & CI** | Multi-stage Dockerfiles, full `docker-compose`, and a GitHub Actions pipeline (lint · test · integration/E2E · build · docker). |
 
@@ -235,4 +235,5 @@ truncates between tests; it never touches the dev database. All of this runs in 
 - [docs/infrastructure.md](docs/infrastructure.md) — production AWS design, scaling, security, CI/CD.
 - [docs/query-optimization.md](docs/query-optimization.md) — the health-panel index, with `EXPLAIN` before/after.
 - [docs/execution-logs-partitioning.md](docs/execution-logs-partitioning.md) — the partitioned log store.
+- [docs/ai-prompt.md](docs/ai-prompt.md) — both AI features' prompts (failure analysis + NL workflow builder), prompt engineering, token limits, and output guards.
 - [REVIEW.md](REVIEW.md) — a worked code review of a flawed snippet.

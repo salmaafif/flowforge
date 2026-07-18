@@ -180,6 +180,23 @@ export class WorkflowsService {
     });
   }
 
+  /** Returns a single version's definition — used by the editor to load for editing. */
+  async getVersion(
+    user: AuthenticatedUser,
+    workflowId: string,
+    version: number,
+  ): Promise<Pick<WorkflowVersion, 'version' | 'definition'>> {
+    await this.getOwnedWorkflow(user, workflowId);
+    const found = await this.prisma.workflowVersion.findUnique({
+      where: { workflowId_version: { workflowId, version } },
+      select: { version: true, definition: true },
+    });
+    if (!found) {
+      throw new NotFoundException(`Version ${version} not found`);
+    }
+    return found;
+  }
+
   async createVersion(
     user: AuthenticatedUser,
     workflowId: string,
