@@ -9,9 +9,11 @@ import {
   generateWorkflow,
   getWorkflow,
   getWorkflowVersion,
+  listWorkflowVersions,
   updateWorkflow,
+  rollbackWorkflowVersion,
 } from '../api/workflows';
-import type { DefinitionStep } from '../api/types';
+import type { DefinitionStep, WorkflowVersionSummary } from '../api/types';
 import { AppLayout } from '../components/AppLayout';
 import { DagView } from '../components/DagView';
 
@@ -108,6 +110,7 @@ export function WorkflowEditorPage() {
 
 /** Loads an existing workflow + its current definition, then renders the editor. */
 function EditWorkflow({ workflowId }: { workflowId: string }) {
+  const queryClient = useQueryClient();
   const workflowQuery = useQuery({
     queryKey: ['workflow', workflowId],
     queryFn: () => getWorkflow(workflowId),
@@ -118,10 +121,14 @@ function EditWorkflow({ workflowId }: { workflowId: string }) {
     queryFn: () => getWorkflowVersion(workflowId, version as number),
     enabled: version !== undefined,
   });
+  const versionsQuery = useQuery({
+    queryKey: ['workflow-versions', workflowId],
+    queryFn: () => listWorkflowVersions(workflowId),
+  });
 
   const crumbs = [{ label: 'Dashboard', to: '/' }, { label: 'Edit' }];
 
-  if (workflowQuery.isError || definitionQuery.isError) {
+  if (workflowQuery.isError || definitionQuery.isError || versionsQuery.isError) {
     return (
       <AppLayout title="Edit workflow" breadcrumbs={crumbs}>
         <p role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">
@@ -159,6 +166,14 @@ function EditWorkflow({ workflowId }: { workflowId: string }) {
         });
         await createWorkflowVersion(workflowId, payload.definition);
       }}
+      versions={versionsQuery.data}
+      onRollback={async (versionToRollback) => {
+        if (confirm(`Are you sure you want to rollback to version ${versionToRollback}? This will create a new version with the old definition.`)) {
+          await rollbackWorkflowVersion(workflowId, versionToRollback);
+          await queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
+          await queryClient.invalidateQueries({ queryKey: ['workflow-versions', workflowId] });
+        }
+      }}
     />
   );
 }
@@ -184,6 +199,8 @@ function EditorForm({
   submitLabel,
   initial,
   onSubmit,
+  versions,
+  onRollback,
 }: {
   title: string;
   subtitle?: string;
@@ -191,6 +208,8 @@ function EditorForm({
   submitLabel: string;
   initial: EditorInitial;
   onSubmit: (payload: SubmitPayload) => Promise<unknown>;
+  versions?: WorkflowVersionSummary[];
+  onRollback?: (version: number) => Promise<unknown>;
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -381,6 +400,46 @@ function EditorForm({
           <p role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">
             {serverError}
           </p>
+        )}
+
+        {versions && versions.length > 0 && (
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="mb-4 text-sm font-semibold text-slate-900">Version History</h3>
+            <div className="overflow-hidden rounded-lg border border-slate-200">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-4 py-2.5 text-left font-semibold text-slate-900">Version</th>
+                    <th className="px-4 py-2.5 text-left font-semibold text-slate-900">Created At</th>
+                    <th className="px-4 py-2.5 text-right font-semibold text-slate-900">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 bg-white">
+                  {versions.map((ver, idx) => (
+                    <tr key={ver.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">
+                        v{ver.version} {idx === 0 && <span className="ml-2 rounded-full bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700 ring-1 ring-inset ring-indigo-200">Current</span>}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-slate-500">
+                        {new Date(ver.createdAt).toLocaleString()}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-right">
+                        {idx !== 0 && onRollback && (
+                          <button
+                            type="button"
+                            onClick={() => onRollback(ver.version)}
+                            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+                          >
+                            Rollback
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         )}
       </div>
     </AppLayout>

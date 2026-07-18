@@ -1,5 +1,5 @@
 import { api } from './client';
-import type { Paginated, RunWithSteps, WorkflowSummary } from './types';
+import type { Paginated, RunWithSteps, WorkflowSummary, WorkflowVersionSummary } from './types';
 
 export interface ListWorkflowsParams {
   page: number;
@@ -63,10 +63,20 @@ export function getWorkflowVersion(
   return api(`/workflows/${workflowId}/versions/${version}`);
 }
 
+export function listWorkflowVersions(workflowId: string): Promise<WorkflowVersionSummary[]> {
+  return api(`/workflows/${workflowId}/versions`);
+}
+
 export function createWorkflowVersion(workflowId: string, definition: unknown): Promise<unknown> {
   return api(`/workflows/${workflowId}/versions`, {
     method: 'POST',
     body: JSON.stringify({ definition }),
+  });
+}
+
+export function rollbackWorkflowVersion(workflowId: string, version: number): Promise<unknown> {
+  return api(`/workflows/${workflowId}/versions/${version}/rollback`, {
+    method: 'POST',
   });
 }
 

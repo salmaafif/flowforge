@@ -115,10 +115,7 @@ export function LoginPage() {
           </button>
         </form>
 
-        <p className="mt-5 text-center text-xs text-slate-400">
-          Demo: <span className="font-medium text-slate-500">salma</span> · editor@salma.test ·
-          password123
-        </p>
+       
       </div>
     </main>
   );
