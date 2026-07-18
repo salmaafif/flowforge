@@ -17,7 +17,13 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { Paginated, PaginationQuery, paginationQuerySchema } from '../common/pagination';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { TriggerRunDto, triggerRunSchema } from './dto/trigger-run.dto';
-import { ExecutionLogView, RunDetail, RunWithSteps, RunsService } from './runs.service';
+import {
+  ExecutionLogView,
+  RunDetail,
+  RunWithSteps,
+  RunWithWorkflowName,
+  RunsService,
+} from './runs.service';
 
 /**
  * Run endpoints: manual triggering plus run history reads. Triggering answers
@@ -36,6 +42,14 @@ export class RunsController {
     @Body(new ZodValidationPipe(triggerRunSchema)) dto: TriggerRunDto,
   ): Promise<RunWithSteps> {
     return this.runsService.trigger(user, workflowId, dto);
+  }
+
+  @Get('runs')
+  listRecent(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query(new ZodValidationPipe(paginationQuerySchema)) query: PaginationQuery,
+  ): Promise<Paginated<RunWithWorkflowName>> {
+    return this.runsService.listRecent(user, query);
   }
 
   @Get('workflows/:id/runs')

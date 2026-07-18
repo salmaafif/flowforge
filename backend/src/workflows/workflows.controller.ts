@@ -106,6 +106,15 @@ export class WorkflowsController {
     return this.workflowsService.listVersions(user, id);
   }
 
+  @Get(':id/versions/:version')
+  getVersion(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('version', ParseIntPipe) version: number,
+  ): Promise<Pick<WorkflowVersion, 'version' | 'definition'>> {
+    return this.workflowsService.getVersion(user, id, version);
+  }
+
   @Post(':id/versions')
   @Roles(Role.EDITOR)
   createVersion(

@@ -5,6 +5,8 @@ import { DashboardPage } from './pages/DashboardPage';
 import { LoginPage } from './pages/LoginPage';
 import { RunHistoryPage } from './pages/RunHistoryPage';
 import { RunPage } from './pages/RunPage';
+import { WorkflowEditorPage } from './pages/WorkflowEditorPage';
+import { WorkflowsPage } from './pages/WorkflowsPage';
 
 function App() {
   return (
@@ -16,6 +18,30 @@ function App() {
           element={
             <ProtectedRoute>
               <DashboardPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/workflows"
+          element={
+            <ProtectedRoute>
+              <WorkflowsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/workflows/new"
+          element={
+            <ProtectedRoute>
+              <WorkflowEditorPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/workflows/:workflowId/edit"
+          element={
+            <ProtectedRoute>
+              <WorkflowEditorPage />
             </ProtectedRoute>
           }
         />

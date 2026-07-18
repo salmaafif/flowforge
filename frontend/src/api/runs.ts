@@ -12,3 +12,12 @@ export function getRunLogs(runId: string): Promise<Paginated<ExecutionLog>> {
 export function listWorkflowRuns(workflowId: string, page: number): Promise<Paginated<Run>> {
   return api(`/workflows/${workflowId}/runs?page=${page}&pageSize=10`);
 }
+
+/** Recent runs across all workflows (tenant-wide). */
+export interface RecentRun extends Run {
+  workflow: { name: string };
+}
+
+export function listRecentRuns(page = 1, pageSize = 5): Promise<Paginated<RecentRun>> {
+  return api(`/runs?page=${page}&pageSize=${pageSize}`);
+}

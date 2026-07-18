@@ -41,6 +41,9 @@ export function AppLayout({ title, subtitle, breadcrumbs, actions, children }: A
           <SidebarLink to="/" end icon={<GridIcon />}>
             Dashboard
           </SidebarLink>
+          <SidebarLink to="/workflows" end icon={<WorkflowsIcon />}>
+            Workflows
+          </SidebarLink>
         </nav>
 
         <div className="border-t border-slate-200 p-3">
@@ -151,3 +154,15 @@ function GridIcon() {
     </svg>
   );
 }
+
+function WorkflowsIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="5" r="2.5" />
+      <circle cx="6" cy="19" r="2.5" />
+      <circle cx="18" cy="19" r="2.5" />
+      <path d="M12 7.5v4.5M12 12l-4.5 4.5M12 12l4.5 4.5" />
+    </svg>
+  );
+}
+

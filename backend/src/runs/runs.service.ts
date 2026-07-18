@@ -34,6 +34,11 @@ import { TriggerRunDto } from './dto/trigger-run.dto';
 
 export type RunWithSteps = Prisma.RunGetPayload<{ include: { steps: true } }>;
 
+/** A run annotated with its workflow's name, for cross-workflow listings. */
+export type RunWithWorkflowName = Prisma.RunGetPayload<{
+  include: { workflow: { select: { name: true } } };
+}>;
+
 /** A single execution-log row as returned to the dashboard (no BigInt id). */
 export type ExecutionLogView = Prisma.ExecutionLogGetPayload<{
   select: { level: true; message: true; timestamp: true; runStepId: true; context: true };
@@ -234,6 +239,24 @@ export class RunsService {
     });
 
     return run;
+  }
+
+  /** Tenant-wide recent runs (across all workflows) for the dashboard's "Recent Runs" table. */
+  async listRecent(
+    user: AuthenticatedUser,
+    query: PaginationQuery,
+  ): Promise<Paginated<RunWithWorkflowName>> {
+    const where: Prisma.RunWhereInput = { tenantId: user.tenantId };
+    const [total, data] = await this.prisma.$transaction([
+      this.prisma.run.count({ where }),
+      this.prisma.run.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        ...toSkipTake(query),
+        include: { workflow: { select: { name: true } } },
+      }),
+    ]);
+    return paginate(data, total, query.page, query.pageSize);
   }
 
   async listForWorkflow(
