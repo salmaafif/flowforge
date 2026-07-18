@@ -17,7 +17,9 @@ export default async function globalSetup(): Promise<void> {
   // database, so a misconfigured URL can never drop a real one.
   const dbName = decodeURIComponent(new URL(testUrl).pathname.replace(/^\//, ''));
   if (!/test/i.test(dbName) || !/^[a-zA-Z0-9_]+$/.test(dbName)) {
-    throw new Error(`Refusing to (re)create a database that is not clearly a test database: ${dbName}`);
+    throw new Error(
+      `Refusing to (re)create a database that is not clearly a test database: ${dbName}`,
+    );
   }
 
   // Connect to the maintenance database to (re)create the test database.

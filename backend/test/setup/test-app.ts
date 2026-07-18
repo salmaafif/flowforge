@@ -133,7 +133,9 @@ export async function pollRunUntilTerminal(
       return res.body;
     }
     if (Date.now() > deadline) {
-      throw new Error(`Run ${runId} did not finish within ${timeoutMs}ms (last: ${res.body.status})`);
+      throw new Error(
+        `Run ${runId} did not finish within ${timeoutMs}ms (last: ${res.body.status})`,
+      );
     }
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }

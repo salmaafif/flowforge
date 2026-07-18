@@ -63,8 +63,20 @@ describe('Run execution (e2e)', () => {
     const definition = {
       timeoutMs: 30_000,
       steps: [
-        { key: 'seedA', name: 'Seed A', type: 'SCRIPT', dependsOn: [], config: { code: 'return 1;' } },
-        { key: 'seedB', name: 'Seed B', type: 'SCRIPT', dependsOn: [], config: { code: 'return 2;' } },
+        {
+          key: 'seedA',
+          name: 'Seed A',
+          type: 'SCRIPT',
+          dependsOn: [],
+          config: { code: 'return 1;' },
+        },
+        {
+          key: 'seedB',
+          name: 'Seed B',
+          type: 'SCRIPT',
+          dependsOn: [],
+          config: { code: 'return 2;' },
+        },
         {
           key: 'merge',
           name: 'Merge',

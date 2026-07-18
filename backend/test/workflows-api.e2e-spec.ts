@@ -193,7 +193,9 @@ describe('Workflows API (e2e)', () => {
 
       // A second version with a different definition.
       const v2Definition = {
-        steps: [{ key: 'only', name: 'Only', type: 'SCRIPT', dependsOn: [], config: { code: 'v2' } }],
+        steps: [
+          { key: 'only', name: 'Only', type: 'SCRIPT', dependsOn: [], config: { code: 'v2' } },
+        ],
       };
       await request(server())
         .post(`/workflows/${id}/versions`)
